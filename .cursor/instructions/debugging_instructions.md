@@ -1,0 +1,1 @@
+Überleg dir 5-7 verschiedene mögliche Ursachen für das Problem, grenz diese auf 1-2 wahrscheinlichste Ursachen ein und füge dann Protokolle und Reasoning Paragraphen hinzu, um deine Annahmen zu bestätigen.

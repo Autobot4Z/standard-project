@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  listing-automation:
+    build: .
+    container_name: xyz
+#    ports:
+#      - "127.0.0.1:9000:9000"
+    env_file:
+      - .env
+#    volumes:
+      # Mount the Google Cloud service account key into the container
+#      - ./reselling-automations-ecc411e5b2c3.json:/app/reselling-automations-ecc411e5b2c3.json:ro
+      # Optional: Mount code for development (uncomment if needed)
+      # - .:/app 
+    restart: always
