@@ -39,6 +39,8 @@ def test_addiere():
 
 ```bash
 pip install pytest
+pip install pytest-cov
+pip install pytest-mock
 ```
 
 ---
@@ -48,7 +50,11 @@ pip install pytest
 Im Terminal:
 
 ```bash
-pytest
+PYTHONPATH=. pytest
+```
+
+```bash
+PYTHONPATH=. pytest --cov=core --cov=services --cov-report=term-missing
 ```
 
 Dann siehst du z. B.:

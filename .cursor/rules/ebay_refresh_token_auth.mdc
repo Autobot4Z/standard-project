@@ -1,0 +1,221 @@
+---
+description: Description how to implement Ebay OAuth Refresh Token Authentication
+globs: 
+alwaysApply: false
+---
+ # eBay OAuth Refresh Token Authentication (`ebay_refresh_token_auth.mdc`)
+
+This document outlines the standard process for authenticating applications with the eBay API using the OAuth 2.0 Refresh Token grant type. This method is essential because eBay User Access Tokens are short-lived (typically 2 hours) and need periodic renewal.
+
+## Authentication Method: OAuth 2.0 Refresh Token Grant
+
+This flow allows an application to obtain a new, short-lived Access Token using a long-lived Refresh Token, without requiring the user to go through the consent process again each time the Access Token expires.
+
+## Key Components
+
+1.  **Refresh Token:**
+    *   A long-lived token obtained alongside the initial User Access Token during the **Authorization Code Grant flow** (which requires user consent via browser redirection).
+    *   Represents the application's permission to access the user's eBay data according to the granted scopes.
+    *   Has a longer validity period (e.g., 18 months) but can be revoked by the user or invalidated under certain conditions (e.g., user changes password).
+    *   **CRITICAL:** Must be stored securely as it allows generating new access tokens.
+
+2.  **Application Credentials (`client_id`, `client_secret`):**
+    *   Unique identifiers for *your application*, obtained from the eBay Developer Portal.
+    *   Used to authenticate the application itself (not the user) when requesting a new token.
+    *   **CRITICAL:** The `client_secret` must be kept confidential.
+
+3.  **Configuration:**
+    *   The application needs access to the `client_id`, `client_secret`, and the user-specific `refresh_token`.
+    *   Storing these in environment variables is a common practice, often loaded from a `.env` file during development using libraries like `python-dotenv`.
+
+    ```python
+    # Example: Loading credentials from environment variables
+    import os
+    from dotenv import load_dotenv
+
+    load_dotenv() # Load variables from .env file if present
+
+    ebay_client_id = os.getenv("EBAY_CLIENT_ID")
+    ebay_client_secret = os.getenv("EBAY_CLIENT_SECRET")
+    ebay_refresh_token = os.getenv("EBAY_REFRESH_TOKEN") # User-specific
+
+    if not all([ebay_client_id, ebay_client_secret, ebay_refresh_token]):
+        # In a real app, use proper logging or raise a specific error
+        print("Error: Missing required eBay credentials in environment.")
+        # Handle error appropriately (e.g., raise ConfigurationError)
+    ```
+
+4.  **Required Scopes:**
+    *   A list of permissions (URLs) that define what API operations the application can perform on behalf of the user (e.g., list inventory, manage orders).
+    *   These scopes must be requested during the initial Authorization Code Grant flow.
+    *   When refreshing the token, you can optionally specify scopes. If provided, they must be **equal to or a subset of** the originally granted scopes. If omitted, the new token inherits the original scopes.
+
+    ```python
+    # Example: Defining required scopes
+    REQUIRED_SCOPES = [
+        "https://api.ebay.com/oauth/api_scope/sell.inventory",
+        "https://api.ebay.com/oauth/api_scope/sell.account",
+        "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+        # Add all other scopes your application needs
+    ]
+    scope_string = " ".join(REQUIRED_SCOPES)
+    ```
+
+5.  **Core Python Libraries:**
+    *   `requests`: For making HTTP calls to the eBay token endpoint.
+    *   `python-dotenv`: (Optional, common) For loading environment variables from a `.env` file.
+    *   `base64`: (Standard library) For encoding client credentials for the Authorization header.
+
+## Authentication Flow
+
+The process involves making a `POST` request to the eBay OAuth token endpoint.
+
+1.  **Gather Credentials & Configuration:**
+    *   Load `client_id`, `client_secret`, and the `refresh_token` (typically from environment variables or a secure store).
+    *   Define the list of required `scopes`.
+
+2.  **Prepare HTTP Request:**
+    *   **Endpoint:** Use the correct eBay token endpoint:
+        *   Production: `https://api.ebay.com/identity/v1/oauth2/token`
+        *   Sandbox: `https://api.sandbox.ebay.com/identity/v1/oauth2/token`
+    *   **HTTP Method:** `POST`
+    *   **Headers:**
+        *   `Content-Type`: Must be `application/x-www-form-urlencoded`.
+        *   `Authorization`: Must be `Basic <encoded_credentials>`. The `<encoded_credentials>` part is the Base64 encoding of the string `client_id:client_secret`.
+
+        ```python
+        import base64
+
+        # Assume ebay_client_id and ebay_client_secret are loaded
+        credentials = f"{ebay_client_id}:{ebay_client_secret}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": f"Basic {encoded_credentials}",
+        }
+        ```
+
+    *   **Payload (Request Body):**
+        *   Must be URL-encoded (`x-www-form-urlencoded`). The `requests` library handles this automatically when using the `data` parameter with a dictionary.
+        *   `grant_type`: Must be set to `refresh_token`.
+        *   `refresh_token`: The actual refresh token value.
+        *   `scope`: (Optional) A space-separated string of the required scopes (URL-encoded if necessary, though `requests` usually handles basic encoding). If omitted, original scopes are used.
+
+        ```python
+        # Assume ebay_refresh_token and scope_string are defined
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": ebay_refresh_token,
+            # "scope": scope_string, # Include if you need to specify/restrict scopes
+        }
+        ```
+
+3.  **Send Request & Handle Response:**
+    *   Use an HTTP client library (like `requests`) to send the `POST` request with the prepared headers and payload.
+    *   **Crucially, check the HTTP response status code.** A `200 OK` indicates success. Handle errors for other codes (e.g., 400 Bad Request, 401 Unauthorized, 5xx Server Error).
+    *   If successful, the response body will be JSON containing the new access token.
+
+        ```json
+        // Example successful JSON response
+        {
+          "access_token": "v^1.1#i^1#p^3#...#AjRV4yNjA=",
+          "expires_in": 7200, // Validity period in seconds (e.g., 7200 = 2 hours)
+          "token_type": "User Access Token"
+        }
+        ```
+
+    *   Parse the JSON response and extract the `access_token` value.
+
+        ```python
+        import requests
+        import json
+
+        token_url = "https://api.ebay.com/identity/v1/oauth2/token" # Or sandbox URL
+        # Assume headers and payload are prepared as above
+
+        try:
+            response = requests.post(token_url, headers=headers, data=payload)
+            response.raise_for_status() # Raises HTTPError for 4xx/5xx status codes
+
+            token_data = response.json()
+            new_access_token = token_data.get("access_token")
+            expires_in = token_data.get("expires_in")
+
+            if not new_access_token:
+                print("Error: 'access_token' not found in successful response.")
+                print("Response:", token_data)
+                return None # Or raise error
+
+            print(f"Successfully obtained new access token (expires in {expires_in} seconds).")
+            # return new_access_token
+
+        except requests.exceptions.HTTPError as http_err:
+            print(f"HTTP error occurred: {http_err}")
+            # Attempt to get more details from the response body
+            try:
+                error_details = response.json()
+                print("Error details:", error_details)
+            except json.JSONDecodeError:
+                print("Error details (non-JSON response):", response.text)
+            return None # Or raise error
+        except requests.exceptions.RequestException as req_err:
+            print(f"Request error occurred: {req_err}")
+            return None # Or raise error
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return None # Or raise error
+        ```
+
+4.  **Error Handling:**
+    *   Anticipate errors: Invalid credentials, expired/revoked refresh token, network issues, incorrect scopes, eBay API downtime.
+    *   Implement robust `try...except` blocks.
+    *   Log detailed error information, including the response body from eBay when available, as it often contains specific error codes or messages.
+
+## Using the New Access Token
+
+*   The obtained `access_token` is short-lived (typically 2 hours, check `expires_in`).
+*   **Do Not Persist:** Do not store this short-lived token in `.env` files or databases. It should be obtained fresh when needed (e.g., at application startup or before a batch of API calls).
+*   Use the token in the appropriate HTTP header for subsequent eBay API calls. This is often `X-EBAY-API-IAF-TOKEN` for traditional APIs or `Authorization: Bearer <access_token>` for newer RESTful APIs. Always check the documentation for the specific eBay API endpoint you are calling.
+
+    ```python
+    # Example using the new token for an eBay API call (replace with actual endpoint/SDK usage)
+    def make_ebay_api_call(api_token):
+        # Replace with actual API endpoint and required headers
+        api_endpoint = "https://api.ebay.com/sell/inventory/v1/inventory_item?limit=1"
+        headers = {
+            "Authorization": f"Bearer {api_token}", # Or potentially "X-EBAY-API-IAF-TOKEN": api_token
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+            # Add other necessary headers like marketplace ID
+        }
+        try:
+            response = requests.get(api_endpoint, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"API call failed: {e}")
+            # Handle API call errors, potentially including re-triggering token refresh
+            # if the error indicates an expired/invalid token.
+            return None
+
+    # --- Integration --- 
+    # new_token = refresh_ebay_access_token() # Function defined earlier
+    # if new_token:
+    #     api_response = make_ebay_api_call(new_token)
+    #     if api_response:
+    #         print("API Call Successful:", api_response)
+
+    ```
+
+## Typical Implementation Location
+
+*   The token refresh logic is often placed in a dedicated utility module (e.g., `utils/ebay_auth.py`).
+*   It's typically called during application initialization or configuration loading (e.g., within `config.py` or when an API client class is instantiated) to ensure a valid token is available for the application's runtime.
+
+## Security Best Practices
+
+*   **NEVER** commit `client_secret` or `refresh_token` to version control. Add them to `.gitignore`.
+*   Store credentials securely using environment variables, secrets management systems (like HashiCorp Vault, AWS Secrets Manager, Google Secret Manager), or encrypted configuration files.
+*   Handle the potential revocation or expiration of the `refresh_token`. If a refresh fails due to an invalid refresh token, the application must guide the user through the initial Authorization Code Grant flow again to obtain a new refresh token.
+*   Use HTTPS for all communications.
