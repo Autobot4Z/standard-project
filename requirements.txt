@@ -1,5 +1,6 @@
 python-dotenv
 requests
 pytest
-ipykernel
+pytest-mock
+pytest-cov
 pre-commit

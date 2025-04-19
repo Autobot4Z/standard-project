@@ -70,9 +70,15 @@ tests/test_math.py ..F
 
 ## Wie schreibe ich einen guten Test?
 
-- Der Testname sollte mit `test_` anfangen
-- Nutze `assert`, um zu prüfen, ob etwas stimmt
-- Teste **eine Sache pro Testfunktion**
+- [ ] Der Testname sollte mit `test_` anfangen
+- [ ] Nutze `assert`, um zu prüfen, ob etwas stimmt
+- [ ] Teste **eine Sache pro Testfunktion**
+- [ ] Testet der Test einen klaren, abgegrenzten Fall?
+- [ ] Ist der Test unabhängig von anderen Tests?
+- [ ] Werden sowohl Erfolgs- als auch Fehlerfälle abgedeckt?
+- [ ] Ist der Test schnell und stabil?
+- [ ] Ist der Testcode verständlich und gut benannt?
+- [ ] Gibt es bei Fehlern klare, hilfreiche Ausgaben?
 
 ---
 
