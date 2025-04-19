@@ -27,3 +27,4 @@ instructions/
 .cursorrules
 README.md
 docs/
+.coveragerc

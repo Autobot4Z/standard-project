@@ -1,7 +1,4 @@
 [run]
 omit =
     tests/*
-    services/*
-    core/*
-    main.py
-    config.py
+    .conda/*
