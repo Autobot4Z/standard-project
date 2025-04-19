@@ -54,7 +54,9 @@ PYTHONPATH=. pytest
 ```
 
 ```bash
-PYTHONPATH=. pytest --cov=core --cov=services --cov-report=term-missing
+PYTHONPATH=. pytest --cov=. --cov-report=term-missing
+# oder
+pytest --cov=. --cov-report=term-missing
 ```
 
 Dann siehst du z. B.:
