@@ -1,0 +1,74 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Billbee API Integration Guide
+
+This guide explains how to interact with the Billbee API in our application.
+
+## Authentication
+
+The Billbee API uses a combination of Basic Auth and an API key for authentication:
+
+1. Basic Auth credentials (email + password) are base64 encoded
+2. API key is passed in a custom header
+3. Required environment variables:
+   - `BILLBEE_API_EMAIL`: Your Billbee account email
+   - `BILLBEE_API_PASSWORD`: Your Billbee account password
+   - `BILLBEE_API_KEY`: Your Billbee API key
+   - `billbee_api_url`: Base URL for the Billbee API
+
+## Making API Requests
+
+The main API interaction file is [services/billbee_api.py](mdc:services/billbee_api.py).
+
+### Headers Setup
+
+All requests to Billbee require these headers:
+
+```python
+auth_token = base64.b64encode(f"{BILLBEE_API_EMAIL}:{BILLBEE_API_PASSWORD}".encode()).decode()
+headers = {
+    "Authorization": f"Basic {auth_token}",
+    "X-Billbee-Api-Key": BILLBEE_API_KEY,
+    "Accept": "application/json"
+}
+```
+
+### Endpoints
+
+1. Orders Endpoint (`/orders`)
+   - Used to fetch orders based on date filters
+   - Supports query parameters like `minOrderDate`
+   - Returns orders in JSON format
+
+### Best Practices
+
+1. Always use async functions for API calls to prevent blocking
+2. Include proper error handling for API responses
+3. Use type hints for better code maintainability
+4. Validate API responses before processing
+5. Use parameter validation for date formats
+
+### Example Usage
+
+```python
+# Fetch orders after a specific date
+orders = await get_new_orders("2024-03-20T00:00:00Z")
+```
+
+## Rate Limiting
+
+Be aware of Billbee's rate limits:
+- Implement proper delay between requests
+- Handle rate limit responses (429 status code)
+- Consider implementing retry logic for failed requests
+
+## Error Handling
+
+Common error scenarios to handle:
+- Authentication failures (401)
+- Rate limiting (429)
+- Invalid parameters (400)
+- Server errors (500)
