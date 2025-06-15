@@ -3,3 +3,4 @@ pytest
 pytest-mock
 pytest-cov
 pre-commit
+google-cloud-logging
