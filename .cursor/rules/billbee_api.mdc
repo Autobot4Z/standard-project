@@ -1,6 +1,5 @@
 ---
-description: 
-globs: 
+description: This guide explains how to interact with the Billbee API in our application.
 alwaysApply: false
 ---
 # Billbee API Integration Guide

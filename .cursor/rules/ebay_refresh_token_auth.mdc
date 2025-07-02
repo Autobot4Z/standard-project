@@ -1,6 +1,5 @@
 ---
-description: Description how to implement Ebay OAuth Refresh Token Authentication
-globs: 
+description: This document outlines the standard process for authenticating applications with the eBay API using the OAuth 2.0 Refresh Token grant type. This method is essential because eBay User Access Tokens are short-lived (typically 2 hours) and need periodic renewal.
 alwaysApply: false
 ---
  # eBay OAuth Refresh Token Authentication (`ebay_refresh_token_auth.mdc`)
