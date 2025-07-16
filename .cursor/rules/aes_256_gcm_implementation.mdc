@@ -1,0 +1,284 @@
+---
+description: Diese Anleitung beschreibt die Implementierung einer symmetrischen AES-256-Verschlüsselung im Galois/Counter Mode (GCM) in Python.
+alwaysApply: false
+---
+# Anleitung: Implementierung der AES-256-GCM-Verschlüsselung
+
+Diese Anleitung beschreibt die Implementierung einer symmetrischen AES-256-Verschlüsselung im Galois/Counter Mode (GCM) in Python. GCM wird für die meisten Anwendungsfälle empfohlen, da es neben der Vertraulichkeit (Verschlüsselung) auch die Authentizität und Integrität der Daten sicherstellt.
+
+Das Beispiel bezieht sich auf die Implementierung innerhalb einer Service-Klasse, wie z.B. in [services/firestore_service.py](mdc:services/firestore_service.py).
+
+## Schritt 1: Generierung und Verwaltung des Verschlüsselungsschlüssels
+
+Der wichtigste Schritt ist die Bereitstellung eines sicheren, 32 Byte langen Schlüssels.
+
+1.  **Sicheren Schlüssel generieren**: Erzeugen Sie einen kryptographisch sicheren 32-Byte-Schlüssel. Dieser Schritt wird nur einmalig ausgeführt.
+
+    Führen Sie diesen Python-Befehl im Terminal aus:
+    ```bash
+    python3 -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+    ```
+
+2.  **Schlüssel speichern**: Der Befehl gibt einen Base64-kodierten String aus. Speichern Sie diesen String in Ihrer Umgebungsvariable (z.B. in der `.env`-Datei). Benennen Sie die Variable aussagekräftig, z.B. `ZOOM_ENCRYPTION_SECRET`.
+
+    ```
+    ZOOM_ENCRYPTION_SECRET=Dein-Generierter-Schlüssel-Hier
+    ```
+
+## Schritt 2: Vorbereitung der Anwendung
+
+Stellen Sie sicher, dass alle notwendigen Abhängigkeiten vorhanden sind und der Schlüssel korrekt geladen wird.
+
+1.  **Abhängigkeiten sicherstellen**: Fügen Sie die notwendigen Importe hinzu.
+
+    ```python
+    import base64
+    import os
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+    ```
+
+2.  **Schlüssel im Code laden**: Im Konstruktor der Klasse (z.B. `FirestoreService.__init__`) laden Sie den Schlüssel aus der Umgebungsvariable, dekodieren ihn von Base64 und validieren die Länge.
+
+    ```python
+    # services/firestore_service.py in __init__
+
+    try:
+        # Laden und von Base64 dekodieren
+        self._encryption_key = base64.urlsafe_b64decode(ZOOM_ENCRYPTION_SECRET)
+
+        # WICHTIG: Die Länge muss exakt 32 Bytes sein
+        if len(self._encryption_key) != 32:
+            raise ValueError("ZOOM_ENCRYPTION_SECRET must be a 32-byte, base64-encoded key.")
+    except (ValueError, TypeError):
+         raise ValueError("ZOOM_ENCRYPTION_SECRET is not a valid base64-encoded string.")
+    ```
+
+## Schritt 3: Implementierung der Ver- und Entschlüsselung
+
+Implementieren Sie die `_encrypt_token` und `_decrypt_token` Methoden.
+
+1.  **Verschlüsselungs-Methode (`_encrypt_token`)**:
+
+    -   **Nonce (IV) generieren**: Für jede Verschlüsselung muss eine neue, zufällige 12-Byte-Nonce erzeugt werden. Verwenden Sie `os.urandom(12)`. Die Wiederverwendung einer Nonce mit demselben Schlüssel ist ein schwerwiegendes Sicherheitsrisiko.
+    -   **Cipher erstellen**: Instanziieren Sie einen `Cipher` mit dem AES-Algorithmus und dem GCM-Modus.
+    -   **Daten verschlüsseln**: Der `encryptor` erzeugt den Chiffretext und ein `tag`. Das `tag` ist für die Authentifizierung der Daten unerlässlich.
+    -   **Struktur des Ergebnisses**: Das Ergebnis muss die `nonce`, das `tag` und den `ciphertext` enthalten. Eine übliche Reihenfolge ist `nonce + tag + ciphertext`.
+    -   **Kodierung**: Kodieren Sie das Ergebnis mit Base64, um einen speicherbaren String zu erhalten.
+
+    ```python
+    # services/firestore_service.py
+
+    async def _encrypt_token(self, token: str) -> str:
+        # 1. Frische 12-Byte Nonce für jede Verschlüsselung
+        iv = os.urandom(12)
+
+        encryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.GCM(iv), # Nonce wird hier übergeben
+            backend=default_backend(),
+        ).encryptor()
+
+        # 2. Verschlüsseln
+        ciphertext = encryptor.update(token.encode()) + encryptor.finalize()
+
+        # 3. Nonce, Tag und Chiffretext für die Speicherung kombinieren und kodieren
+        return base64.urlsafe_b64encode(iv + encryptor.tag + ciphertext).decode("utf-8")
+    ```
+
+2.  **Entschlüsselungs-Methode (`_decrypt_token`)**:
+
+    -   **Dekodieren**: Dekodieren Sie den Base64-String aus der Datenbank.
+    -   **Daten extrahieren**: Trennen Sie `nonce`, `tag` und `ciphertext` wieder auf. Die Längen sind fix: 12 Bytes für die Nonce und 16 Bytes für das Tag.
+    -   **Cipher erstellen**: Übergeben Sie dem `GCM`-Modus hier die `nonce` **und** das `tag`.
+    -   **Daten entschlüsseln**: Wenn das `tag` ungültig ist (weil die Daten manipuliert wurden), wirft die `cryptography`-Bibliothek automatisch eine `InvalidTag`-Exception.
+
+    ```python
+    # services/firestore_service.py
+
+    async def _decrypt_token(self, encrypted_token: str) -> str:
+        # 1. Base64 dekodieren
+        data = base64.urlsafe_b64decode(encrypted_token.encode("utf-8"))
+
+        # 2. Komponenten extrahieren (Nonces: 12 Bytes, GCM-Tag: 16 Bytes)
+        iv = data[:12]
+        tag = data[12:28]
+        ciphertext = data[28:]
+
+        decryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.GCM(iv, tag), # Wichtig: Nonce und Tag hier übergeben
+            backend=default_backend(),
+        ).decryptor()
+
+        # 3. Entschlüsseln. Wirft `InvalidTag` bei Manipulationsversuch.
+        return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
+    ```
+
+## Schritt 4: Testen
+
+Fügen Sie temporären Testcode hinzu, um die korrekte Funktion sicherzustellen, bevor Sie die Änderungen übernehmen.
+
+```python
+# Temporär in main.py oder einem Test-Skript
+
+import asyncio
+from services.firestore_service import FirestoreService
+
+async def test_encryption():
+    print("Running encryption test...")
+    fs_service = FirestoreService()
+    original_token = "my_super_secret_test_token_string"
+
+    encrypted_token = await fs_service._encrypt_token(original_token)
+    decrypted_token = await fs_service._decrypt_token(encrypted_token)
+
+    assert original_token == decrypted_token
+    print("✅ Encryption and decryption test PASSED!")
+
+if __name__ == "__main__":
+    # Sicherstellen, dass die .env geladen ist und der Key existiert
+    asyncio.run(test_encryption())
+```
+
+Nach erfolgreichem Test den Testcode wieder entfernen.
+# Anleitung: Implementierung der AES-256-GCM-Verschlüsselung
+
+Diese Anleitung beschreibt die Implementierung einer symmetrischen AES-256-Verschlüsselung im Galois/Counter Mode (GCM) in Python. GCM wird für die meisten Anwendungsfälle empfohlen, da es neben der Vertraulichkeit (Verschlüsselung) auch die Authentizität und Integrität der Daten sicherstellt.
+
+Das Beispiel bezieht sich auf die Implementierung innerhalb einer Service-Klasse, wie z.B. in [services/firestore_service.py](mdc:services/firestore_service.py).
+
+## Schritt 1: Generierung und Verwaltung des Verschlüsselungsschlüssels
+
+Der wichtigste Schritt ist die Bereitstellung eines sicheren, 32 Byte langen Schlüssels.
+
+1.  **Sicheren Schlüssel generieren**: Erzeugen Sie einen kryptographisch sicheren 32-Byte-Schlüssel. Dieser Schritt wird nur einmalig ausgeführt.
+
+    Führen Sie diesen Python-Befehl im Terminal aus:
+    ```bash
+    python3 -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+    ```
+
+2.  **Schlüssel speichern**: Der Befehl gibt einen Base64-kodierten String aus. Speichern Sie diesen String in Ihrer Umgebungsvariable (z.B. in der `.env`-Datei). Benennen Sie die Variable aussagekräftig, z.B. `ZOOM_ENCRYPTION_SECRET`.
+
+    ```
+    ZOOM_ENCRYPTION_SECRET=Dein-Generierter-Schlüssel-Hier
+    ```
+
+## Schritt 2: Vorbereitung der Anwendung
+
+Stellen Sie sicher, dass alle notwendigen Abhängigkeiten vorhanden sind und der Schlüssel korrekt geladen wird.
+
+1.  **Abhängigkeiten sicherstellen**: Fügen Sie die notwendigen Importe hinzu.
+
+    ```python
+    import base64
+    import os
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+    ```
+
+2.  **Schlüssel im Code laden**: Im Konstruktor der Klasse (z.B. `FirestoreService.__init__`) laden Sie den Schlüssel aus der Umgebungsvariable, dekodieren ihn von Base64 und validieren die Länge.
+
+    ```python
+    # services/firestore_service.py in __init__
+
+    try:
+        # Laden und von Base64 dekodieren
+        self._encryption_key = base64.urlsafe_b64decode(ZOOM_ENCRYPTION_SECRET)
+
+        # WICHTIG: Die Länge muss exakt 32 Bytes sein
+        if len(self._encryption_key) != 32:
+            raise ValueError("ZOOM_ENCRYPTION_SECRET must be a 32-byte, base64-encoded key.")
+    except (ValueError, TypeError):
+         raise ValueError("ZOOM_ENCRYPTION_SECRET is not a valid base64-encoded string.")
+    ```
+
+## Schritt 3: Implementierung der Ver- und Entschlüsselung
+
+Implementieren Sie die `_encrypt_token` und `_decrypt_token` Methoden.
+
+1.  **Verschlüsselungs-Methode (`_encrypt_token`)**:
+
+    -   **Nonce (IV) generieren**: Für jede Verschlüsselung muss eine neue, zufällige 12-Byte-Nonce erzeugt werden. Verwenden Sie `os.urandom(12)`. Die Wiederverwendung einer Nonce mit demselben Schlüssel ist ein schwerwiegendes Sicherheitsrisiko.
+    -   **Cipher erstellen**: Instanziieren Sie einen `Cipher` mit dem AES-Algorithmus und dem GCM-Modus.
+    -   **Daten verschlüsseln**: Der `encryptor` erzeugt den Chiffretext und ein `tag`. Das `tag` ist für die Authentifizierung der Daten unerlässlich.
+    -   **Struktur des Ergebnisses**: Das Ergebnis muss die `nonce`, das `tag` und den `ciphertext` enthalten. Eine übliche Reihenfolge ist `nonce + tag + ciphertext`.
+    -   **Kodierung**: Kodieren Sie das Ergebnis mit Base64, um einen speicherbaren String zu erhalten.
+
+    ```python
+    # services/firestore_service.py
+
+    async def _encrypt_token(self, token: str) -> str:
+        # 1. Frische 12-Byte Nonce für jede Verschlüsselung
+        iv = os.urandom(12)
+
+        encryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.GCM(iv), # Nonce wird hier übergeben
+            backend=default_backend(),
+        ).encryptor()
+
+        # 2. Verschlüsseln
+        ciphertext = encryptor.update(token.encode()) + encryptor.finalize()
+
+        # 3. Nonce, Tag und Chiffretext für die Speicherung kombinieren und kodieren
+        return base64.urlsafe_b64encode(iv + encryptor.tag + ciphertext).decode("utf-8")
+    ```
+
+2.  **Entschlüsselungs-Methode (`_decrypt_token`)**:
+
+    -   **Dekodieren**: Dekodieren Sie den Base64-String aus der Datenbank.
+    -   **Daten extrahieren**: Trennen Sie `nonce`, `tag` und `ciphertext` wieder auf. Die Längen sind fix: 12 Bytes für die Nonce und 16 Bytes für das Tag.
+    -   **Cipher erstellen**: Übergeben Sie dem `GCM`-Modus hier die `nonce` **und** das `tag`.
+    -   **Daten entschlüsseln**: Wenn das `tag` ungültig ist (weil die Daten manipuliert wurden), wirft die `cryptography`-Bibliothek automatisch eine `InvalidTag`-Exception.
+
+    ```python
+    # services/firestore_service.py
+
+    async def _decrypt_token(self, encrypted_token: str) -> str:
+        # 1. Base64 dekodieren
+        data = base64.urlsafe_b64decode(encrypted_token.encode("utf-8"))
+
+        # 2. Komponenten extrahieren (Nonces: 12 Bytes, GCM-Tag: 16 Bytes)
+        iv = data[:12]
+        tag = data[12:28]
+        ciphertext = data[28:]
+
+        decryptor = Cipher(
+            algorithms.AES(self._encryption_key),
+            modes.GCM(iv, tag), # Wichtig: Nonce und Tag hier übergeben
+            backend=default_backend(),
+        ).decryptor()
+
+        # 3. Entschlüsseln. Wirft `InvalidTag` bei Manipulationsversuch.
+        return (decryptor.update(ciphertext) + decryptor.finalize()).decode()
+    ```
+
+## Schritt 4: Testen
+
+Fügen Sie temporären Testcode hinzu, um die korrekte Funktion sicherzustellen, bevor Sie die Änderungen übernehmen.
+
+```python
+# Temporär in main.py oder einem Test-Skript
+
+import asyncio
+from services.firestore_service import FirestoreService
+
+async def test_encryption():
+    print("Running encryption test...")
+    fs_service = FirestoreService()
+    original_token = "my_super_secret_test_token_string"
+
+    encrypted_token = await fs_service._encrypt_token(original_token)
+    decrypted_token = await fs_service._decrypt_token(encrypted_token)
+
+    assert original_token == decrypted_token
+    print("✅ Encryption and decryption test PASSED!")
+
+if __name__ == "__main__":
+    # Sicherstellen, dass die .env geladen ist und der Key existiert
+    asyncio.run(test_encryption())
+```
+
+Nach erfolgreichem Test den Testcode wieder entfernen.
