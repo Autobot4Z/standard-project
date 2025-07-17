@@ -28,3 +28,6 @@ instructions/
 README.md
 docs/
 .coveragerc
+.pre-commit-config.yaml
+pytest.ini
+README.md
