@@ -2,7 +2,7 @@ from google.cloud import tasks_v2
 from fastapi import FastAPI, Request, HTTPException
 from contextlib import asynccontextmanager
 from services.firestore_service import FirestoreService
-from utils.logger import get_logger, log_error, log_deletion_event
+from utils.logger import get_logger, cloud_log, cloud_log_deletion_event
 from config import (
     GOOGLE_CREDENTIALS_PATH,
     CLOUD_TASKS_LOCATION,
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         )
         logger.debug("Cloud Tasks Client erfolgreich authentifiziert.")
     except Exception as e:
-        log_error(
+        cloud_log(
             f"Fehler beim authentifizieren des Cloud Tasks Client: {e}", "CRITICAL"
         )
 
@@ -101,17 +101,17 @@ async def delete_task(task_name: str, success: bool = True):
     client = app.state.tasks_client
     try:
         client.delete_task(name=task_name)
-        log_deletion_event(f"Google Task {task_name} erfolgreich gelöscht.", "INFO")
+        cloud_log_deletion_event(f"Google Task {task_name} erfolgreich gelöscht.", "INFO")
         if not success:
-            log_error(
+            cloud_log(
                 f"Google Task {task_name} gelöscht ohne erfolgreiche Ausführung.",
                 "CRITICAL",
             )
     except Exception as e:
-        log_deletion_event(
+        cloud_log_deletion_event(
             f"Fehler beim Löschen der Google Task {task_name}: {e}", "ERROR"
         )
-        log_error(f"Fehler beim Löschen der Google Task {task_name}: {e}")
+        cloud_log(f"Fehler beim Löschen der Google Task {task_name}: {e}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

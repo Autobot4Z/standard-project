@@ -67,7 +67,7 @@ def _initialize_cloud_logging():
             _cloud_log_handler_for_deletions = None
             _cloud_log_handler_for_errors = None
 
-def log_deletion_event(message, severity="INFO", **kwargs):
+def cloud_log_deletion_event(message, severity="INFO", **kwargs):
     """
     Sendet eine spezifische Lösch-Log-Nachricht an Google Cloud Logging.
     Diese Logs werden unter dem Namen 'data-deletion-events' in Cloud Logging
@@ -102,7 +102,7 @@ def log_deletion_event(message, severity="INFO", **kwargs):
         )
 
 
-def log_error(message, severity="ERROR", **kwargs):
+def cloud_log(message, severity="ERROR", **kwargs):
     """
     Sendet eine spezifische Error-Log-Nachricht an Google Cloud Logging.
     """

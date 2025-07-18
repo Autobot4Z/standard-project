@@ -1,7 +1,7 @@
 from google.cloud.exceptions import Conflict
 import asyncio
 from google.cloud import firestore
-from utils.logger import get_logger, log_error
+from utils.logger import get_logger, cloud_log
 from config import GOOGLE_CREDENTIALS_PATH, IDEMPOTENCY_COLLECTION
 import hashlib
 
@@ -18,7 +18,7 @@ class FirestoreService:
             )
             logger.debug("Firestore Client erfolgreich initialisiert.")
         except Exception as e:
-            log_error(
+            cloud_log(
                 f"Fehler beim initialisieren des Firestore Client: {str(e)}", "CRITICAL"
             )
 
@@ -48,7 +48,7 @@ class FirestoreService:
                 )
                 return False
             except Exception as e:
-                log_error(f"Unerwarteter Fehler bei Id {id}: {e}")
+                cloud_log(f"Unerwarteter Fehler bei Id {id}: {e}")
                 return False
 
     async def set_webhook_status(self, id: str):
@@ -63,7 +63,7 @@ class FirestoreService:
             doc_ref = self._db.collection(self._collection).document(hashed_id)
             doc_ref.update({"status": "COMPLETED"})
         except Exception as e:
-            log_error(f"Fehler beim aktualisieren der ID {id} in Firestore: {e}")
+            cloud_log(f"Fehler beim aktualisieren der ID {id} in Firestore: {e}")
 
     async def delete_webhook(self, id: str):
         """
@@ -76,7 +76,7 @@ class FirestoreService:
             doc_ref = self._db.collection(self._collection).document(hashed_id)
             doc_ref.delete()
         except Exception as e:
-            log_error(f"Fehler beim löschen der ID {id} in Firestore: {e}")
+            cloud_log(f"Fehler beim löschen der ID {id} in Firestore: {e}")
 
     async def _hash_id(self, id: str) -> bytes:
         str_id = str(id)

@@ -1,11 +1,11 @@
 import asyncio
 import functools
 import httpx
-from utils.logger import log_error, get_logger
+from utils.logger import cloud_log, get_logger
 
 logger = get_logger(__name__)
 
-def retry_async(max_retries: int = 3, delay: float = 2.0):
+def io_retry_async(max_retries: int = 3, delay: float = 2.0):
     """
     Asynchroner Retry-Decorator für coroutine-Funktionen.
     Führt Wiederholungsversuche nur bei transienten Fehlern durch (z.B. Netzwerkprobleme oder 5xx Server-Fehler).
@@ -53,7 +53,7 @@ def retry_async(max_retries: int = 3, delay: float = 2.0):
                         )
                         raise
 
-            log_error(
+            cloud_log(
                 f"Alle {max_retries} Retries für '{func.__name__}' fehlgeschlagen. Letzter Fehler: {last_exc}"
             )
             raise last_exc
