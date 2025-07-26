@@ -1,0 +1,584 @@
+---
+description: Diese Vorlage zeigt, wie PBKDF2-HMAC-SHA-256 mit 600.000+ Iterationen für GDPR-konforme Pseudonymisierung gemäß OWASP 2024 Standards von Grund auf implementiert wird.
+alwaysApply: false
+---
+# OWASP 2024 GDPR-konforme Pseudonymisierung - Implementierungsvorlage
+
+## 🎯 **Überblick**
+
+Diese Vorlage zeigt, wie PBKDF2-HMAC-SHA-256 mit 600.000+ Iterationen für GDPR-konforme Pseudonymisierung gemäß OWASP 2024 Standards von Grund auf implementiert wird.
+
+### **Warum PBKDF2-HMAC-SHA-256?**
+- **OWASP 2024**: Empfohlener Standard für Pseudonymisierung
+- **GDPR Article 32**: Erfüllt "angemessene technische Maßnahmen"
+- **EDPB 2025**: Konforme Pseudonymisierungs-Implementierung
+- **Sicherheit**: Schutz gegen Rainbow-Table und Brute-Force Angriffe
+
+### **Performance-Charakteristika:**
+- **Production**: ~300ms pro Hash (600.000 Iterationen)
+- **Testing**: ~1ms pro Hash (1.000 Iterationen)
+- **Skalierung**: Linear mit Iterationszahl
+
+---
+
+## 🛠️ **IMPLEMENTIERUNG**
+
+### **1. Pseudonymisierungs-Service erstellen**
+
+**Datei**: `utils/pseudonymization.py`
+
+```python
+"""
+OWASP 2024 compliant pseudonymization service.
+"""
+
+import os
+import sys
+from typing import Optional, Dict, Any
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+
+class PseudonymizationService:
+    """
+    GDPR-konforme Pseudonymisierung mit PBKDF2-HMAC-SHA-256.
+    """
+    
+    def __init__(self, iterations: int = None):
+        """
+        Initialisiert den Pseudonymisierungs-Service.
+        
+        Args:
+            iterations: Anzahl PBKDF2-Iterationen 
+                       (None = automatische Umgebungserkennung)
+        """
+        if iterations is None:
+            # Automatische Umgebungserkennung
+            if 'pytest' in sys.modules or os.getenv('TESTING') == 'true':
+                self.iterations = 1000  # Schnell für Tests
+            else:
+                self.iterations = 600000  # OWASP 2024 konform
+        else:
+            if iterations < 1000:
+                raise ValueError("Minimum 1.000 Iterationen erforderlich")
+            self.iterations = iterations
+    
+    def pseudonymize(self, data: str, salt: str) -> str:
+        """
+        Pseudonymisiert Daten mit PBKDF2-HMAC-SHA-256.
+        
+        Args:
+            data: Zu pseudonymisierende Daten (z.B. User-ID, Event-ID)
+            salt: Geheimer Salt (sollte aus sicherer Konfiguration kommen)
+            
+        Returns:
+            Pseudonymisierter Hash als hexadezimaler String (64 Zeichen)
+            
+        Raises:
+            ValueError: Bei ungültigen Eingaben oder Verarbeitungsfehlern
+        """
+        self._validate_inputs(data, salt)
+        
+        try:
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,  # 256-bit output
+                salt=salt.encode('utf-8'),
+                iterations=self.iterations,
+                backend=default_backend()
+            )
+            
+            key = kdf.derive(data.encode('utf-8'))
+            return key.hex()
+            
+        except Exception as e:
+            raise ValueError(f"Pseudonymization failed: {e}")
+    
+    def pseudonymize_batch(self, data_list: list[str], salt: str) -> list[str]:
+        """
+        Pseudonymisiert mehrere Daten effizient.
+        
+        Args:
+            data_list: Liste von zu pseudonymisierenden Daten
+            salt: Geheimer Salt
+            
+        Returns:
+            Liste von pseudonymisierten Hashes
+        """
+        if not data_list or not isinstance(data_list, list):
+            raise ValueError("data_list muss non-empty list sein")
+        
+        return [self.pseudonymize(data, salt) for data in data_list]
+    
+    def get_compliance_info(self) -> Dict[str, Any]:
+        """
+        Gibt Compliance-Informationen zurück.
+        """
+        return {
+            "algorithm": "PBKDF2-HMAC-SHA-256",
+            "iterations": self.iterations,
+            "owasp_2024_compliant": self.iterations >= 600000,
+            "gdpr_compliant": True,
+            "estimated_time_ms": self.iterations // 2000,
+            "security_level": self._get_security_level()
+        }
+    
+    def _validate_inputs(self, data: str, salt: str):
+        """Validiert Eingaben."""
+        if not data or not isinstance(data, str):
+            raise ValueError("Data muss non-empty String sein")
+        if not salt or not isinstance(salt, str):
+            raise ValueError("Salt muss non-empty String sein")
+        if len(salt) < 16:
+            raise ValueError("Salt sollte mindestens 16 Zeichen lang sein")
+    
+    def _get_security_level(self) -> str:
+        """Bestimmt Sicherheitslevel basierend auf Iterationen."""
+        if self.iterations >= 1000000:
+            return "very_high"
+        elif self.iterations >= 600000:
+            return "high"
+        elif self.iterations >= 100000:
+            return "medium"
+        else:
+            return "low"
+
+# Global service instance
+pseudonymization_service = PseudonymizationService()
+
+# Convenience functions
+def pseudonymize(data: str, salt: str) -> str:
+    """Convenience-Funktion für direkte Pseudonymisierung."""
+    return pseudonymization_service.pseudonymize(data, salt)
+
+def pseudonymize_batch(data_list: list[str], salt: str) -> list[str]:
+    """Convenience-Funktion für Batch-Pseudonymisierung."""
+    return pseudonymization_service.pseudonymize_batch(data_list, salt)
+```
+
+### **2. Konfiguration einrichten**
+
+**Environment Variables** (`.env`):
+
+```bash
+# Pseudonymization Configuration
+PSEUDONYMIZATION_SALT=your_base64_encoded_32_byte_salt_here
+PSEUDONYMIZATION_ITERATIONS=600000
+
+# Testing Configuration (optional)
+TESTING=false
+```
+
+**Config-Datei** (`config.py`):
+
+```python
+import os
+import secrets
+import base64
+
+# Pseudonymization Configuration
+PSEUDONYMIZATION_SALT = os.getenv(
+    "PSEUDONYMIZATION_SALT", 
+    "default_salt_change_in_production_use_base64_encoded_32_bytes"
+)
+
+PSEUDONYMIZATION_ITERATIONS = int(os.getenv("PSEUDONYMIZATION_ITERATIONS", "600000"))
+
+# Validate configuration
+def validate_pseudonymization_config():
+    """Validiert Pseudonymisierungs-Konfiguration."""
+    errors = []
+    warnings = []
+    
+    # Salt validation
+    if PSEUDONYMIZATION_SALT == "default_salt_change_in_production_use_base64_encoded_32_bytes":
+        errors.append("PSEUDONYMIZATION_SALT muss in Production geändert werden")
+    elif len(PSEUDONYMIZATION_SALT) < 32:
+        warnings.append("PSEUDONYMIZATION_SALT sollte mindestens 32 Zeichen lang sein")
+    
+    # Iterations validation
+    if PSEUDONYMIZATION_ITERATIONS < 600000:
+        warnings.append(f"PSEUDONYMIZATION_ITERATIONS ({PSEUDONYMIZATION_ITERATIONS:,}) unter OWASP 2024 Minimum (600.000)")
+    elif PSEUDONYMIZATION_ITERATIONS < 1000:
+        errors.append(f"PSEUDONYMIZATION_ITERATIONS ({PSEUDONYMIZATION_ITERATIONS:,}) zu niedrig (Minimum: 1.000)")
+    
+    if errors:
+        raise ValueError(f"Konfigurationsfehler: {'; '.join(errors)}")
+    
+    for warning in warnings:
+        print(f"WARNING: {warning}")
+    
+    return {"salt_length": len(PSEUDONYMIZATION_SALT), "iterations": PSEUDONYMIZATION_ITERATIONS}
+
+def generate_secure_salt() -> str:
+    """Generiert einen sicheren Salt für Production."""
+    salt_bytes = secrets.token_bytes(32)  # 256-bit salt
+    return base64.b64encode(salt_bytes).decode('utf-8')
+
+# Validate configuration at import
+validate_pseudonymization_config()
+```
+
+### **3. Anwendung implementieren**
+
+**Beispiel**: User-Management mit Pseudonymisierung
+
+```python
+from utils.pseudonymization import pseudonymize
+from config import PSEUDONYMIZATION_SALT
+from datetime import datetime
+from typing import Dict, Any
+
+class UserService:
+    """Beispiel-Service mit GDPR-konformer Pseudonymisierung."""
+    
+    def create_user_record(self, user_id: str, email: str, name: str) -> Dict[str, Any]:
+        """
+        Erstellt User-Record mit pseudonymisierten IDs für Analytics/Logging.
+        """
+        # Pseudonymisierte Identifikatoren für Analytics
+        pseudonymized_user_id = pseudonymize(user_id, PSEUDONYMIZATION_SALT)
+        pseudonymized_email_domain = pseudonymize(
+            email.split('@')[1], 
+            PSEUDONYMIZATION_SALT
+        )
+        
+        return {
+            # Echte Daten (verschlüsselt speichern in Production)
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "created_at": datetime.utcnow(),
+            
+            # Pseudonymisierte Daten für Analytics/Logging
+            "analytics": {
+                "pseudonymized_user_id": pseudonymized_user_id,
+                "pseudonymized_email_domain": pseudonymized_email_domain,
+                "created_at": datetime.utcnow()
+            }
+        }
+    
+    def create_activity_log(self, user_id: str, activity: str) -> Dict[str, Any]:
+        """
+        Erstellt Activity-Log mit pseudonymisierter User-ID.
+        """
+        return {
+            "pseudonymized_user_id": pseudonymize(user_id, PSEUDONYMIZATION_SALT),
+            "activity": activity,
+            "timestamp": datetime.utcnow(),
+            "session_id": pseudonymize(f"{user_id}_{datetime.utcnow().date()}", PSEUDONYMIZATION_SALT)
+        }
+
+# Event-Processing mit Pseudonymisierung
+class EventProcessor:
+    """Beispiel-Event-Processing mit Pseudonymisierung."""
+    
+    def process_user_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Verarbeitet User-Events mit GDPR-konformer Pseudonymisierung.
+        """
+        user_id = event_data.get("user_id")
+        event_type = event_data.get("event_type")
+        
+        if not user_id:
+            raise ValueError("user_id ist erforderlich")
+        
+        # Pseudonymisierte Version für Analytics/Metrics
+        processed_event = {
+            "pseudonymized_user_id": pseudonymize(user_id, PSEUDONYMIZATION_SALT),
+            "event_type": event_type,
+            "timestamp": datetime.utcnow(),
+            "event_id": pseudonymize(f"{user_id}_{event_type}_{datetime.utcnow().isoformat()}", PSEUDONYMIZATION_SALT)
+        }
+        
+        return processed_event
+```
+
+### **4. Dependencies**
+
+**requirements.txt**:
+```txt
+cryptography>=41.0.0
+```
+
+---
+
+## 🧪 **TESTING**
+
+### **Unit Tests**
+
+**Datei**: `tests/test_pseudonymization.py`
+
+```python
+import pytest
+from utils.pseudonymization import PseudonymizationService, pseudonymize, pseudonymize_batch
+
+class TestPseudonymizationService:
+    
+    def test_basic_pseudonymization(self):
+        """Test grundlegende Pseudonymisierung."""
+        service = PseudonymizationService(iterations=1000)
+        
+        result = service.pseudonymize("user_123", "test_salt")
+        
+        assert len(result) == 64  # 256-bit hash = 64 hex characters
+        assert result != "user_123"
+        assert isinstance(result, str)
+    
+    def test_deterministic_behavior(self):
+        """Test dass gleiche Inputs gleiche Outputs produzieren."""
+        service = PseudonymizationService(iterations=1000)
+        
+        result1 = service.pseudonymize("user_123", "test_salt")
+        result2 = service.pseudonymize("user_123", "test_salt")
+        
+        assert result1 == result2
+    
+    def test_salt_dependency(self):
+        """Test dass verschiedene Salts verschiedene Ergebnisse produzieren."""
+        service = PseudonymizationService(iterations=1000)
+        
+        result1 = service.pseudonymize("user_123", "salt1")
+        result2 = service.pseudonymize("user_123", "salt2")
+        
+        assert result1 != result2
+    
+    def test_batch_processing(self):
+        """Test Batch-Pseudonymisierung."""
+        service = PseudonymizationService(iterations=1000)
+        
+        data = ["user_1", "user_2", "user_3"]
+        results = service.pseudonymize_batch(data, "test_salt")
+        
+        assert len(results) == 3
+        assert len(set(results)) == 3  # Alle Ergebnisse einzigartig
+        assert all(len(result) == 64 for result in results)
+    
+    def test_compliance_info(self):
+        """Test Compliance-Informationen."""
+        service = PseudonymizationService(iterations=600000)
+        info = service.get_compliance_info()
+        
+        assert info["owasp_2024_compliant"] == True
+        assert info["gdpr_compliant"] == True
+        assert info["algorithm"] == "PBKDF2-HMAC-SHA-256"
+        assert info["iterations"] == 600000
+    
+    def test_input_validation(self):
+        """Test Input-Validierung."""
+        service = PseudonymizationService(iterations=1000)
+        
+        # Leere Daten
+        with pytest.raises(ValueError, match="Data muss non-empty String sein"):
+            service.pseudonymize("", "salt")
+        
+        # Leerer Salt
+        with pytest.raises(ValueError, match="Salt muss non-empty String sein"):
+            service.pseudonymize("data", "")
+        
+        # Kurzer Salt
+        with pytest.raises(ValueError, match="Salt sollte mindestens 16 Zeichen lang sein"):
+            service.pseudonymize("data", "short")
+    
+    def test_iteration_validation(self):
+        """Test Validierung der Iterationszahl."""
+        with pytest.raises(ValueError, match="Minimum 1.000 Iterationen erforderlich"):
+            PseudonymizationService(iterations=999)
+    
+    def test_convenience_functions(self):
+        """Test Convenience-Funktionen."""
+        result1 = pseudonymize("test_data", "test_salt")
+        results2 = pseudonymize_batch(["test1", "test2"], "test_salt")
+        
+        assert len(result1) == 64
+        assert len(results2) == 2
+        assert all(len(r) == 64 for r in results2)
+
+class TestEnvironmentDetection:
+    
+    def test_automatic_iteration_selection(self):
+        """Test automatische Iteration-Auswahl basierend auf Umgebung."""
+        # In pytest sollten automatisch Test-Iterationen verwendet werden
+        service = PseudonymizationService()
+        
+        # In Test-Umgebung sollte schnelle Iterationen verwenden
+        assert service.iterations == 1000
+        
+        info = service.get_compliance_info()
+        assert "iterations" in info
+```
+
+### **Integration Tests**
+
+**Datei**: `tests/test_pseudonymization_integration.py`
+
+```python
+import pytest
+from config import validate_pseudonymization_config, PSEUDONYMIZATION_SALT
+from utils.pseudonymization import pseudonymize
+
+class TestPseudonymizationIntegration:
+    
+    def test_config_validation(self):
+        """Test Konfiguration-Validierung."""
+        # Sollte ohne Fehler durchlaufen
+        config_info = validate_pseudonymization_config()
+        assert "salt_length" in config_info
+        assert "iterations" in config_info
+    
+    def test_end_to_end_pseudonymization(self):
+        """Test End-to-End Pseudonymisierung mit echter Konfiguration."""
+        user_id = "user_12345"
+        
+        # Pseudonymisierung mit echter Salt-Konfiguration
+        result = pseudonymize(user_id, PSEUDONYMIZATION_SALT)
+        
+        assert len(result) == 64
+        assert result != user_id
+        
+        # Wiederholbarkeit testen
+        result2 = pseudonymize(user_id, PSEUDONYMIZATION_SALT)
+        assert result == result2
+    
+    def test_realistic_data_processing(self):
+        """Test mit realistischen Daten."""
+        test_data = [
+            "user_123",
+            "event_456", 
+            "session_789",
+            "email@domain.com",
+            "long_identifier_with_special_chars_!@#$%"
+        ]
+        
+        results = []
+        for data in test_data:
+            result = pseudonymize(data, PSEUDONYMIZATION_SALT)
+            results.append(result)
+        
+        # Alle Ergebnisse müssen einzigartig sein
+        assert len(set(results)) == len(results)
+        
+        # Alle müssen korrekte Länge haben
+        assert all(len(result) == 64 for result in results)
+```
+
+---
+
+## 🔒 **SICHERHEITSASPEKTE**
+
+### **Salt-Management**
+
+```python
+# Sichere Salt-Generierung für Production
+import secrets
+import base64
+
+def generate_production_salt() -> str:
+    """Generiert einen kryptographisch sicheren Salt."""
+    salt_bytes = secrets.token_bytes(32)  # 256-bit
+    return base64.b64encode(salt_bytes).decode('utf-8')
+
+# Verschiedene Salts für verschiedene Datentypen
+SALTS = {
+    "user_ids": "salt_for_user_identification",
+    "events": "salt_for_event_processing", 
+    "sessions": "salt_for_session_tracking",
+    "analytics": "salt_for_analytics_data"
+}
+```
+
+### **Performance-Optimierung**
+
+```python
+import time
+from utils.pseudonymization import PseudonymizationService
+
+def benchmark_pseudonymization():
+    """Benchmark verschiedener Iteration-Konfigurationen."""
+    test_data = "benchmark_test_data"
+    salt = "benchmark_salt"
+    
+    iteration_configs = [1000, 10000, 100000, 600000]
+    
+    for iterations in iteration_configs:
+        service = PseudonymizationService(iterations=iterations)
+        
+        start_time = time.time()
+        result = service.pseudonymize(test_data, salt)
+        execution_time = (time.time() - start_time) * 1000
+        
+        compliance = service.get_compliance_info()
+        
+        print(f"Iterations: {iterations:,}")
+        print(f"Time: {execution_time:.1f}ms")
+        print(f"OWASP 2024 compliant: {compliance['owasp_2024_compliant']}")
+        print(f"Security level: {compliance['security_level']}")
+        print("---")
+```
+
+---
+
+## 🚀 **DEPLOYMENT**
+
+### **Production-Checklist**
+
+- [ ] Sichere Salt-Werte generiert und in Environment-Variablen gesetzt
+- [ ] Iterationszahl auf mindestens 600.000 konfiguriert
+- [ ] Unit Tests und Integration Tests bestehen
+- [ ] Performance-Benchmarks durchgeführt
+- [ ] Konfiguration-Validierung implementiert
+- [ ] Logging für Pseudonymisierungs-Operationen eingerichtet
+- [ ] Monitoring für Performance-Anomalien aktiviert
+
+### **Monitoring**
+
+```python
+import logging
+from utils.pseudonymization import PseudonymizationService
+
+# Logging setup
+logger = logging.getLogger("pseudonymization")
+
+class MonitoredPseudonymizationService(PseudonymizationService):
+    """Erweiterte Service-Klasse mit Monitoring."""
+    
+    def pseudonymize(self, data: str, salt: str) -> str:
+        start_time = time.time()
+        
+        try:
+            result = super().pseudonymize(data, salt)
+            execution_time = (time.time() - start_time) * 1000
+            
+            # Performance-Logging
+            logger.info(f"Pseudonymization completed in {execution_time:.1f}ms")
+            
+            if execution_time > 5000:  # 5 second threshold
+                logger.warning(f"Slow pseudonymization: {execution_time:.1f}ms")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Pseudonymization failed: {e}")
+            raise
+```
+
+---
+
+## 📋 **ZUSAMMENFASSUNG**
+
+Diese Implementierung bietet:
+
+✅ **OWASP 2024 Compliance** (≥600.000 Iterationen)  
+✅ **GDPR-konforme Pseudonymisierung** für personenbezogene Daten  
+✅ **Automatische Umgebungserkennung** (Test vs. Production)  
+✅ **Robuste Input-Validierung** und Error-Handling  
+✅ **Batch-Processing** für effiziente Verarbeitung  
+✅ **Comprehensive Testing** mit Unit- und Integration-Tests  
+✅ **Production-ready** mit Monitoring und Konfiguration-Validierung  
+
+**Best Practices:**
+- Verwende unterschiedliche Salts für verschiedene Datentypen
+- Konfiguriere 600.000+ Iterationen für Production
+- Implementiere umfassende Tests
+- Monitore Performance in Production
+- Validiere Konfiguration beim Start
