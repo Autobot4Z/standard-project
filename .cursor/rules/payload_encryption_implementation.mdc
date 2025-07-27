@@ -1,0 +1,783 @@
+---
+description: Diese Anleitung beschreibt die Implementierung einer GDPR-konformen AES-256-GCM Payload-Verschlüsselung. Die Lösung ermöglicht es, sensible Webhook-Daten verschlüsselt über Cloud Tasks zu übertragen.
+alwaysApply: false
+---
+# Payload-Verschlüsselung Implementation Guide
+
+## Übersicht
+
+Diese Anleitung beschreibt die Implementierung einer GDPR-konformen AES-256-GCM Payload-Verschlüsselung. Die Lösung ermöglicht es, sensible Webhook-Daten verschlüsselt über Cloud Tasks zu übertragen.
+
+## Architektur
+
+```
+┌─────────────────┐    verschlüsselt     ┌─────────────────┐    entschlüsselt     ┌─────────────────┐
+│   Sender        │ ───────────────────► │  Cloud Tasks    │ ───────────────────► │   Empfänger     │
+│   (Webhook)     │                      │   Queue         │                      │   (Processor)   │
+└─────────────────┘                      └─────────────────┘                      └─────────────────┘
+```
+
+## 1. Environment Setup
+
+### 1.1 Verschlüsselungsschlüssel generieren
+
+```bash
+# Einmaliger Befehl zur Schlüssel-Generierung
+python3 -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+### 1.2 Environment Variable setzen
+
+```bash
+# In .env Datei
+PAYLOAD_ENCRYPTION_KEY=YOUR_GENERATED_KEY_HERE
+```
+
+## 2. Dependencies
+
+### 2.1 Requirements.txt erweitern
+
+```python
+# In requirements.txt hinzufügen
+cryptography
+```
+
+### 2.2 Installation
+
+```bash
+pip install cryptography
+```
+
+## 3. Sender-Implementation (Verschlüsselung)
+
+### 3.1 Encryption Module erstellen
+
+Erstelle `utils/encryption.py` mit folgenden Funktionen:
+
+```python
+import base64
+import json
+import os
+from typing import Dict, Any
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+
+def encrypt_payload(payload: Dict[Any, Any]) -> str:
+    """
+    Verschlüsselt einen Payload mit AES-256-GCM.
+    
+    Args:
+        payload: Dict der verschlüsselt werden soll
+        
+    Returns:
+        str: Base64-kodierter verschlüsselter String
+    """
+    encryption_key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
+    if not encryption_key:
+        raise ValueError("PAYLOAD_ENCRYPTION_KEY environment variable is required")
+    
+    try:
+        key = base64.urlsafe_b64decode(encryption_key)
+        if len(key) != 32:
+            raise ValueError("PAYLOAD_ENCRYPTION_KEY must be a 32-byte, base64-encoded key")
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Invalid PAYLOAD_ENCRYPTION_KEY: {str(e)}")
+    
+    # Payload zu JSON String konvertieren
+    json_data = json.dumps(payload, ensure_ascii=False)
+    
+    # Frische 12-Byte IV für jede Verschlüsselung
+    iv = os.urandom(12)
+    
+    # Cipher mit AES-256-GCM erstellen
+    encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend(),
+    ).encryptor()
+    
+    # Verschlüsseln
+    ciphertext = encryptor.update(json_data.encode("utf-8")) + encryptor.finalize()
+    
+    # IV + Tag + Ciphertext kombinieren und Base64 kodieren
+    encrypted_data = iv + encryptor.tag + ciphertext
+    return base64.urlsafe_b64encode(encrypted_data).decode("utf-8")
+```
+
+### 3.2 Sender-Service modifizieren
+
+```python
+from utils.encryption import encrypt_payload
+
+async def send_encrypted_webhook(payload: dict):
+    """Webhook mit verschlüsseltem Payload senden"""
+    
+    # Payload verschlüsseln
+    encrypted_payload = encrypt_payload(payload)
+    
+    # Task mit verschlüsseltem Payload erstellen
+    task = {
+        'http_request': {
+            'http_method': tasks_v2.HttpMethod.POST,
+            'url': webhook_url,
+            'headers': {
+                'Content-Type': 'text/plain',
+                'X-Payload-Encrypted': 'true'  # Wichtiger Header!
+            },
+            'body': encrypted_payload.encode('utf-8')
+        }
+    }
+    
+    # Task zur Queue hinzufügen
+    client.create_task(parent=parent, task=task)
+```
+
+## 4. Empfänger-Implementation (Entschlüsselung)
+
+### 4.1 Decryption Class erstellen
+
+Ergänze `utils/encryption.py`:
+
+```python
+from cryptography.exceptions import InvalidTag
+
+
+class PayloadDecryption:
+    """GDPR-konforme Entschlüsselungslogik für verschlüsselte Payloads."""
+    
+    def __init__(self):
+        encryption_key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
+        if not encryption_key:
+            raise ValueError("PAYLOAD_ENCRYPTION_KEY environment variable is required")
+        
+        try:
+            self._encryption_key = base64.urlsafe_b64decode(encryption_key)
+            if len(self._encryption_key) != 32:
+                raise ValueError("PAYLOAD_ENCRYPTION_KEY must be a 32-byte, base64-encoded key")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid PAYLOAD_ENCRYPTION_KEY: {str(e)}")
+    
+    def decrypt_payload(self, encrypted_data: str) -> Dict[Any, Any]:
+        """
+        Entschlüsselt einen AES-256-GCM verschlüsselten Payload.
+        
+        Args:
+            encrypted_data: Base64-kodierter String mit IV + Tag + Ciphertext
+            
+        Returns:
+            Dict: Entschlüsselte Payload-Daten
+            
+        Raises:
+            ValueError: Bei ungültigen Eingabedaten oder Entschlüsselungsfehlern
+        """
+        try:
+            # Base64 dekodieren
+            data = base64.urlsafe_b64decode(encrypted_data.encode("utf-8"))
+            
+            # Komponenten extrahieren (IV: 12 Bytes, Tag: 16 Bytes)
+            if len(data) < 28:  # Mindestens IV + Tag
+                raise ValueError("Encrypted data too short")
+                
+            iv = data[:12]
+            tag = data[12:28]
+            ciphertext = data[28:]
+            
+            # Cipher mit AES-256-GCM erstellen
+            decryptor = Cipher(
+                algorithms.AES(self._encryption_key),
+                modes.GCM(iv, tag),
+                backend=default_backend(),
+            ).decryptor()
+            
+            # Entschlüsseln
+            decrypted_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+            decrypted_text = decrypted_bytes.decode("utf-8")
+            
+            # JSON zu Dict konvertieren
+            return json.loads(decrypted_text)
+            
+        except (InvalidTag, ValueError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise ValueError(f"Decryption failed: {str(e)}")
+```
+
+### 4.2 FastAPI Webhook Handler modifizieren
+
+```python
+from utils.encryption import PayloadDecryption
+
+# In lifespan function
+app.state.payload_decryption = PayloadDecryption()
+
+@app.post("/webhook/endpoint")
+async def webhook_handler(request: Request):
+    payload_decryption = app.state.payload_decryption
+    
+    # Header prüfen für Verschlüsselung
+    is_encrypted = request.headers.get("X-Payload-Encrypted") == "true"
+    
+    try:
+        if is_encrypted:
+            # Verschlüsselter Payload: text/plain Format mit Base64-String
+            encrypted_data = await request.body()
+            encrypted_string = encrypted_data.decode("utf-8")
+            
+            try:
+                payload = payload_decryption.decrypt_payload(encrypted_string)
+            except ValueError as e:
+                logger.error("Entschlüsselungsfehler: {error}", error=str(e))
+                raise HTTPException(status_code=400, detail="Payload decryption failed")
+        else:
+            # Unverschlüsselter Payload: JSON Format (Rückwärtskompatibilität)
+            payload = await request.json()
+            
+        # Normale Verarbeitung mit entschlüsseltem payload
+        # ...
+        
+    except (IndexError, KeyError, TypeError):
+        raise HTTPException(status_code=400, detail="Ungültiges Payload-Format")
+    except Exception as e:
+        logger.error("Fehler beim Verarbeiten des Payloads: {error}", error=str(e))
+        raise HTTPException(status_code=400, detail="Payload processing failed")
+```
+
+## 5. Protokoll-Spezifikation
+
+### 5.1 Verschlüsseltes Format
+
+```
+Header:
+- Content-Type: text/plain
+- X-Payload-Encrypted: true
+
+Body:
+- Base64-kodierter String
+- Format: IV (12 bytes) + Tag (16 bytes) + Ciphertext (variable)
+```
+
+### 5.2 Unverschlüsseltes Format (Rückwärtskompatibilität)
+
+```
+Header:
+- Content-Type: application/json
+- X-Payload-Encrypted: false (oder nicht gesetzt)
+
+Body:
+- Standard JSON Payload
+```
+
+## 6. Sicherheits-Features
+
+### 6.1 Authentizität & Integrität
+- AES-256-GCM bietet automatische Authentifizierung
+- InvalidTag Exception bei manipulierten Daten
+
+### 6.2 Fail-Safe Mechanismen
+- HTTP 400 bei Entschlüsselungsfehlern
+- Ausführliche Fehler-Logs für Debugging
+- Rückwärtskompatibilität mit unverschlüsselten Payloads
+
+### 6.3 GDPR-Konformität
+- Verschlüsselung sensibler Daten in Transit
+- Sichere Schlüssel-Verwaltung über Environment Variables
+- Keine Klartext-Logs von sensiblen Daten
+
+## 7. Testing
+
+### 7.1 Test-Script erstellen
+
+```python
+#!/usr/bin/env python3
+import os
+import json
+import asyncio
+from dotenv import load_dotenv
+from utils.encryption import PayloadDecryption, encrypt_payload
+
+load_dotenv()
+
+async def test_encryption():
+    # Test-Payload
+    test_payload = [{"objectId": "12345", "eventId": "test-123"}]
+    
+    # Verschlüsseln
+    encrypted = encrypt_payload(test_payload)
+    print(f"✅ Payload verschlüsselt: {encrypted[:50]}...")
+    
+    # Entschlüsseln
+    decryption = PayloadDecryption()
+    decrypted = decryption.decrypt_payload(encrypted)
+    
+    # Vergleichen
+    assert test_payload == decrypted
+    print("✅ Ver- und Entschlüsselung erfolgreich!")
+
+if __name__ == "__main__":
+    asyncio.run(test_encryption())
+```
+
+### 7.2 Tests ausführen
+
+```bash
+# Mit lokaler Conda Environment
+./.conda/bin/python test_encryption.py
+
+# Erwartete Ausgabe:
+# ✅ Payload verschlüsselt: WP1kow2TZ4jIVualJt9qouUmEnJJYBVjhcjjFjkvs72GKzha4A...
+# ✅ Ver- und Entschlüsselung erfolgreich!
+```
+
+## 8. Deployment Checklist
+
+### 8.1 Vor Deployment prüfen
+
+- [ ] `PAYLOAD_ENCRYPTION_KEY` in allen Environments gesetzt
+- [ ] `cryptography` Dependency installiert
+- [ ] Tests erfolgreich durchgeführt
+- [ ] Logging für Verschlüsselungs-Status implementiert
+
+### 8.2 Rollout-Strategie
+
+1. **Phase 1**: Empfänger-Service deployen (unterstützt beide Formate)
+2. **Phase 2**: Sender-Service upgraden (sendet verschlüsselte Payloads)
+3. **Phase 3**: Monitoring & Validation
+
+### 8.3 Monitoring
+
+```python
+# Logging für Verschlüsselungs-Status
+logger.info(
+    "Webhook empfangen. Verschlüsselt: {encrypted}",
+    encrypted=is_encrypted,
+    task_name=task_name
+)
+```
+
+## 9. Troubleshooting
+
+### 9.1 Häufige Fehler
+
+| Fehler | Ursache | Lösung |
+|--------|---------|--------|
+| `PAYLOAD_ENCRYPTION_KEY environment variable is required` | Fehlende Environment Variable | Key in .env setzen |
+| `Invalid PAYLOAD_ENCRYPTION_KEY: Incorrect padding` | Ungültiger Base64 Key | Neuen Key generieren |
+| `Payload decryption failed` | Manipulierte Daten oder falscher Key | Key & Datenintegrität prüfen |
+| `Encrypted data too short` | Unvollständige Übertragung | Netzwerk & Task-Queue prüfen |
+
+### 9.2 Debug-Logging
+
+```python
+logger.debug(
+    "Entschlüsselung gestartet. Daten-Länge: {length}",
+    length=len(encrypted_data)
+)
+```
+
+## 10. Wartung & Updates
+
+### 10.1 Key-Rotation (falls erforderlich)
+
+1. Neuen Key generieren
+2. Beide Keys parallel unterstützen (Übergangszeit)
+3. Alten Key nach Übergangszeit entfernen
+
+### 10.2 Monitoring-Metriken
+
+- Verschlüsselungs-/Entschlüsselungsrate
+- Fehlerrate bei Entschlüsselung
+- Performance-Impact
+
+---
+
+**📚 Weitere Dokumentation:**
+- [AES-256-GCM Implementation Guide](./aes_256_gcm_implementation.md)
+- [GDPR Logging Guidelines](./GDPR_LOGGING_IMPLEMENTATION_TEMPLATE.md)# Payload-Verschlüsselung Implementation Guide
+
+## Übersicht
+
+Diese Anleitung beschreibt die Implementierung einer GDPR-konformen AES-256-GCM Payload-Verschlüsselung für HubSpot Webhook-Systeme. Die Lösung ermöglicht es, sensible Webhook-Daten verschlüsselt über Cloud Tasks zu übertragen.
+
+## Architektur
+
+```
+┌─────────────────┐    verschlüsselt     ┌─────────────────┐    entschlüsselt     ┌─────────────────┐
+│   Sender        │ ───────────────────► │  Cloud Tasks    │ ───────────────────► │   Empfänger     │
+│   (Webhook)     │                      │   Queue         │                      │   (Processor)   │
+└─────────────────┘                      └─────────────────┘                      └─────────────────┘
+```
+
+## 1. Environment Setup
+
+### 1.1 Verschlüsselungsschlüssel generieren
+
+```bash
+# Einmaliger Befehl zur Schlüssel-Generierung
+python3 -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+### 1.2 Environment Variable setzen
+
+```bash
+# In .env Datei
+PAYLOAD_ENCRYPTION_KEY=YOUR_GENERATED_KEY_HERE
+```
+
+## 2. Dependencies
+
+### 2.1 Requirements.txt erweitern
+
+```python
+# In requirements.txt hinzufügen
+cryptography
+```
+
+### 2.2 Installation
+
+```bash
+pip install cryptography
+```
+
+## 3. Sender-Implementation (Verschlüsselung)
+
+### 3.1 Encryption Module erstellen
+
+Erstelle `utils/encryption.py` mit folgenden Funktionen:
+
+```python
+import base64
+import json
+import os
+from typing import Dict, Any
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
+
+def encrypt_payload(payload: Dict[Any, Any]) -> str:
+    """
+    Verschlüsselt einen Payload mit AES-256-GCM.
+    
+    Args:
+        payload: Dict der verschlüsselt werden soll
+        
+    Returns:
+        str: Base64-kodierter verschlüsselter String
+    """
+    encryption_key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
+    if not encryption_key:
+        raise ValueError("PAYLOAD_ENCRYPTION_KEY environment variable is required")
+    
+    try:
+        key = base64.urlsafe_b64decode(encryption_key)
+        if len(key) != 32:
+            raise ValueError("PAYLOAD_ENCRYPTION_KEY must be a 32-byte, base64-encoded key")
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Invalid PAYLOAD_ENCRYPTION_KEY: {str(e)}")
+    
+    # Payload zu JSON String konvertieren
+    json_data = json.dumps(payload, ensure_ascii=False)
+    
+    # Frische 12-Byte IV für jede Verschlüsselung
+    iv = os.urandom(12)
+    
+    # Cipher mit AES-256-GCM erstellen
+    encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend(),
+    ).encryptor()
+    
+    # Verschlüsseln
+    ciphertext = encryptor.update(json_data.encode("utf-8")) + encryptor.finalize()
+    
+    # IV + Tag + Ciphertext kombinieren und Base64 kodieren
+    encrypted_data = iv + encryptor.tag + ciphertext
+    return base64.urlsafe_b64encode(encrypted_data).decode("utf-8")
+```
+
+### 3.2 Sender-Service modifizieren
+
+```python
+from utils.encryption import encrypt_payload
+
+async def send_encrypted_webhook(payload: dict):
+    """Webhook mit verschlüsseltem Payload senden"""
+    
+    # Payload verschlüsseln
+    encrypted_payload = encrypt_payload(payload)
+    
+    # Task mit verschlüsseltem Payload erstellen
+    task = {
+        'http_request': {
+            'http_method': tasks_v2.HttpMethod.POST,
+            'url': webhook_url,
+            'headers': {
+                'Content-Type': 'text/plain',
+                'X-Payload-Encrypted': 'true'  # Wichtiger Header!
+            },
+            'body': encrypted_payload.encode('utf-8')
+        }
+    }
+    
+    # Task zur Queue hinzufügen
+    client.create_task(parent=parent, task=task)
+```
+
+## 4. Empfänger-Implementation (Entschlüsselung)
+
+### 4.1 Decryption Class erstellen
+
+Ergänze `utils/encryption.py`:
+
+```python
+from cryptography.exceptions import InvalidTag
+
+
+class PayloadDecryption:
+    """GDPR-konforme Entschlüsselungslogik für verschlüsselte Payloads."""
+    
+    def __init__(self):
+        encryption_key = os.getenv("PAYLOAD_ENCRYPTION_KEY")
+        if not encryption_key:
+            raise ValueError("PAYLOAD_ENCRYPTION_KEY environment variable is required")
+        
+        try:
+            self._encryption_key = base64.urlsafe_b64decode(encryption_key)
+            if len(self._encryption_key) != 32:
+                raise ValueError("PAYLOAD_ENCRYPTION_KEY must be a 32-byte, base64-encoded key")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid PAYLOAD_ENCRYPTION_KEY: {str(e)}")
+    
+    def decrypt_payload(self, encrypted_data: str) -> Dict[Any, Any]:
+        """
+        Entschlüsselt einen AES-256-GCM verschlüsselten Payload.
+        
+        Args:
+            encrypted_data: Base64-kodierter String mit IV + Tag + Ciphertext
+            
+        Returns:
+            Dict: Entschlüsselte Payload-Daten
+            
+        Raises:
+            ValueError: Bei ungültigen Eingabedaten oder Entschlüsselungsfehlern
+        """
+        try:
+            # Base64 dekodieren
+            data = base64.urlsafe_b64decode(encrypted_data.encode("utf-8"))
+            
+            # Komponenten extrahieren (IV: 12 Bytes, Tag: 16 Bytes)
+            if len(data) < 28:  # Mindestens IV + Tag
+                raise ValueError("Encrypted data too short")
+                
+            iv = data[:12]
+            tag = data[12:28]
+            ciphertext = data[28:]
+            
+            # Cipher mit AES-256-GCM erstellen
+            decryptor = Cipher(
+                algorithms.AES(self._encryption_key),
+                modes.GCM(iv, tag),
+                backend=default_backend(),
+            ).decryptor()
+            
+            # Entschlüsseln
+            decrypted_bytes = decryptor.update(ciphertext) + decryptor.finalize()
+            decrypted_text = decrypted_bytes.decode("utf-8")
+            
+            # JSON zu Dict konvertieren
+            return json.loads(decrypted_text)
+            
+        except (InvalidTag, ValueError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise ValueError(f"Decryption failed: {str(e)}")
+```
+
+### 4.2 FastAPI Webhook Handler modifizieren
+
+```python
+from utils.encryption import PayloadDecryption
+
+# In lifespan function
+app.state.payload_decryption = PayloadDecryption()
+
+@app.post("/webhook/endpoint")
+async def webhook_handler(request: Request):
+    payload_decryption = app.state.payload_decryption
+    
+    # Header prüfen für Verschlüsselung
+    is_encrypted = request.headers.get("X-Payload-Encrypted") == "true"
+    
+    try:
+        if is_encrypted:
+            # Verschlüsselter Payload: text/plain Format mit Base64-String
+            encrypted_data = await request.body()
+            encrypted_string = encrypted_data.decode("utf-8")
+            
+            try:
+                payload = payload_decryption.decrypt_payload(encrypted_string)
+            except ValueError as e:
+                logger.error("Entschlüsselungsfehler: {error}", error=str(e))
+                raise HTTPException(status_code=400, detail="Payload decryption failed")
+        else:
+            # Unverschlüsselter Payload: JSON Format (Rückwärtskompatibilität)
+            payload = await request.json()
+            
+        # Normale Verarbeitung mit entschlüsseltem payload
+        # ...
+        
+    except (IndexError, KeyError, TypeError):
+        raise HTTPException(status_code=400, detail="Ungültiges Payload-Format")
+    except Exception as e:
+        logger.error("Fehler beim Verarbeiten des Payloads: {error}", error=str(e))
+        raise HTTPException(status_code=400, detail="Payload processing failed")
+```
+
+## 5. Protokoll-Spezifikation
+
+### 5.1 Verschlüsseltes Format
+
+```
+Header:
+- Content-Type: text/plain
+- X-Payload-Encrypted: true
+
+Body:
+- Base64-kodierter String
+- Format: IV (12 bytes) + Tag (16 bytes) + Ciphertext (variable)
+```
+
+### 5.2 Unverschlüsseltes Format (Rückwärtskompatibilität)
+
+```
+Header:
+- Content-Type: application/json
+- X-Payload-Encrypted: false (oder nicht gesetzt)
+
+Body:
+- Standard JSON Payload
+```
+
+## 6. Sicherheits-Features
+
+### 6.1 Authentizität & Integrität
+- AES-256-GCM bietet automatische Authentifizierung
+- InvalidTag Exception bei manipulierten Daten
+
+### 6.2 Fail-Safe Mechanismen
+- HTTP 400 bei Entschlüsselungsfehlern
+- Ausführliche Fehler-Logs für Debugging
+- Rückwärtskompatibilität mit unverschlüsselten Payloads
+
+### 6.3 GDPR-Konformität
+- Verschlüsselung sensibler Daten in Transit
+- Sichere Schlüssel-Verwaltung über Environment Variables
+- Keine Klartext-Logs von sensiblen Daten
+
+## 7. Testing
+
+### 7.1 Test-Script erstellen
+
+```python
+#!/usr/bin/env python3
+import os
+import json
+import asyncio
+from dotenv import load_dotenv
+from utils.encryption import PayloadDecryption, encrypt_payload
+
+load_dotenv()
+
+async def test_encryption():
+    # Test-Payload
+    test_payload = [{"objectId": "12345", "eventId": "test-123"}]
+    
+    # Verschlüsseln
+    encrypted = encrypt_payload(test_payload)
+    print(f"✅ Payload verschlüsselt: {encrypted[:50]}...")
+    
+    # Entschlüsseln
+    decryption = PayloadDecryption()
+    decrypted = decryption.decrypt_payload(encrypted)
+    
+    # Vergleichen
+    assert test_payload == decrypted
+    print("✅ Ver- und Entschlüsselung erfolgreich!")
+
+if __name__ == "__main__":
+    asyncio.run(test_encryption())
+```
+
+### 7.2 Tests ausführen
+
+```bash
+# Mit lokaler Conda Environment
+./.conda/bin/python test_encryption.py
+
+# Erwartete Ausgabe:
+# ✅ Payload verschlüsselt: WP1kow2TZ4jIVualJt9qouUmEnJJYBVjhcjjFjkvs72GKzha4A...
+# ✅ Ver- und Entschlüsselung erfolgreich!
+```
+
+## 8. Deployment Checklist
+
+### 8.1 Vor Deployment prüfen
+
+- [ ] `PAYLOAD_ENCRYPTION_KEY` in allen Environments gesetzt
+- [ ] `cryptography` Dependency installiert
+- [ ] Tests erfolgreich durchgeführt
+- [ ] Logging für Verschlüsselungs-Status implementiert
+
+### 8.2 Rollout-Strategie
+
+1. **Phase 1**: Empfänger-Service deployen (unterstützt beide Formate)
+2. **Phase 2**: Sender-Service upgraden (sendet verschlüsselte Payloads)
+3. **Phase 3**: Monitoring & Validation
+
+### 8.3 Monitoring
+
+```python
+# Logging für Verschlüsselungs-Status
+logger.info(
+    "Webhook empfangen. Verschlüsselt: {encrypted}",
+    encrypted=is_encrypted,
+    task_name=task_name
+)
+```
+
+## 9. Troubleshooting
+
+### 9.1 Häufige Fehler
+
+| Fehler | Ursache | Lösung |
+|--------|---------|--------|
+| `PAYLOAD_ENCRYPTION_KEY environment variable is required` | Fehlende Environment Variable | Key in .env setzen |
+| `Invalid PAYLOAD_ENCRYPTION_KEY: Incorrect padding` | Ungültiger Base64 Key | Neuen Key generieren |
+| `Payload decryption failed` | Manipulierte Daten oder falscher Key | Key & Datenintegrität prüfen |
+| `Encrypted data too short` | Unvollständige Übertragung | Netzwerk & Task-Queue prüfen |
+
+### 9.2 Debug-Logging
+
+```python
+logger.debug(
+    "Entschlüsselung gestartet. Daten-Länge: {length}",
+    length=len(encrypted_data)
+)
+```
+
+## 10. Wartung & Updates
+
+### 10.1 Key-Rotation (falls erforderlich)
+
+1. Neuen Key generieren
+2. Beide Keys parallel unterstützen (Übergangszeit)
+3. Alten Key nach Übergangszeit entfernen
+
+### 10.2 Monitoring-Metriken
+
+- Verschlüsselungs-/Entschlüsselungsrate
+- Fehlerrate bei Entschlüsselung
+- Performance-Impact
+
+---
+
+**📚 Weitere Dokumentation:**
+- [AES-256-GCM Implementation Guide](./aes_256_gcm_implementation.md)
+- [GDPR Logging Guidelines](./GDPR_LOGGING_IMPLEMENTATION_TEMPLATE.md)
