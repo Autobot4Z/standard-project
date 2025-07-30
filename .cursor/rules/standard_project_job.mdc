@@ -1,0 +1,2199 @@
+---
+description: Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Job-Projekte. Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration für Programme, die gestartet werden und dann durchlaufen.
+alwaysApply: false
+---
+# Standard-Projektvorlage für Python-Job-Anwendungen
+
+Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Job-Projekte. Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration für Programme, die gestartet werden und dann durchlaufen.
+
+## 📁 Standard-Ordnerstruktur
+
+```
+projekt-name/
+├── main.py                          # Hauptanwendung (Job Entry Point)
+├── config.py                        # Zentrale Konfiguration und Umgebungsvariablen
+├── requirements.txt                 # Python-Dependencies
+├── .env.example                     # Beispiel-Umgebungsvariablen
+├── docker-compose.yml               # Container-Orchestrierung
+├── Dockerfile                       # Container-Definition
+├── pytest.ini                      # Test-Konfiguration
+├── .gitignore                       # Git-Ausschlüsse
+├── README.md                        # Projekt-Dokumentation
+├── core/
+│   ├── __init__.py
+│   ├── job_orchestrator.py          # Hauptjob-Orchestrierung
+│   └── processor.py                 # Zentrale Verarbeitungslogik
+├── services/                        # Service-Layer (API-Integrationen)
+│   ├── __init__.py
+│   ├── database_service.py          # Datenbankzugriff
+│   ├── external_api_service.py      # Externe API-Integrationen
+│   └── file_service.py              # Dateiverwaltung
+├── models/                          # Datenmodelle (Pydantic/SQLAlchemy)
+│   ├── __init__.py
+│   ├── base_models.py               # Basis-Modelle
+│   └── job_models.py                # Job-spezifische Modelle
+├── utils/                           # Hilfsfunktionen und gemeinsame Tools
+│   ├── __init__.py
+│   ├── logger.py                    # Logging-Konfiguration
+│   ├── retry.py                     # Retry-Mechanismen
+│   ├── encryption.py                # Verschlüsselung (falls benötigt)
+│   └── validators.py                # Datenvalidierung
+├── tests/                           # Test-Suite
+│   ├── __init__.py
+│   ├── test_core/                   # Tests für core/
+│   ├── test_services/               # Tests für services/
+│   ├── test_models/                 # Tests für models/
+│   ├── test_utils/                  # Tests für utils/
+│   └── test_integration/            # Integrationstests
+└── docs/                            # Projektdokumentation
+    ├── CHANGELOG.md                 # Änderungsprotokoll
+    ├── JOB_DOCUMENTATION.md         # Job-Dokumentation
+    └── DEPLOYMENT.md                # Deployment-Anleitung
+```
+
+## 🏷️ Namenskonventionen
+
+### Dateien und Ordner
+- **Snake_case**: `user_service.py`, `order_models.py`
+- **Aussagekräftige Namen**: `authentication_manager.py` statt `auth.py`
+- **Singular für Module**: `user_model.py` nicht `users_models.py`
+- **Plural für Collections**: `models/`, `services/`, `tests/`
+
+### Python-Code
+```python
+# Klassen: PascalCase
+class UserAuthenticationManager:
+    pass
+
+# Funktionen/Variablen: snake_case
+def process_user_data():
+    user_email = "test@example.com"
+
+# Konstanten: UPPER_SNAKE_CASE
+DATABASE_CONNECTION_TIMEOUT = 30
+API_BASE_URL = "https://api.example.com"
+
+# Private Methoden: _leading_underscore
+def _validate_internal_data():
+    pass
+```
+
+### Environment Variables
+```bash
+# Format: PROJEKT_KATEGORIE_VARIABLE
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+MYAPP_API_KEY=secret-key
+MYAPP_LOG_LEVEL=INFO
+```
+
+## ⚙️ Standardeinstellungen
+
+### Ausführungsparameter
+```python
+# config.py - Standard Konfiguration für Job-Anwendungen
+JOB_TIMEOUT = 3600  # Standard Job-Timeout in Sekunden (1 Stunde)
+MAX_RETRIES = 3     # Standard Retry-Anzahl bei Fehlern
+BATCH_SIZE = 100    # Standard Batch-Größe für Datenverarbeitung
+```
+
+### Exit-Codes
+```python
+# config.py - Standard Exit-Codes
+EXIT_SUCCESS = 0        # Job erfolgreich beendet
+EXIT_FAILURE = 1        # Job mit allgemeinem Fehler beendet
+EXIT_CONFIG_ERROR = 2   # Konfigurationsfehler
+EXIT_DATA_ERROR = 3     # Datenvalidierungsfehler
+EXIT_TIMEOUT = 4        # Job-Timeout erreicht
+```
+
+### Debug/Log Levels
+```python
+# .env - Environment Variable (Standard: INFO für Production Jobs)
+LOG_LEVEL=INFO
+
+# config.py - Environment-Variable Handling
+import os
+from utils.logger import get_logger
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# utils/logger.py - Logger-Konfiguration
+import logging
+import os
+
+def get_logger(name: str):
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    return logging.getLogger(name)
+```
+
+### Standard .env.example
+```bash
+# Standard Environment Configuration
+LOG_LEVEL=INFO
+JOB_TIMEOUT=3600
+MAX_RETRIES=3
+BATCH_SIZE=100
+
+# Application specific variables
+MYAPP_API_KEY=your-api-key-here
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+```
+
+## 📏 Datei-Teilungskriterien
+
+### Wann Dateien aufteilen?
+
+#### **Größenkriterien:**
+- **< 200 Zeilen**: Optimal, keine Teilung nötig
+- **200-500 Zeilen**: Überprüfen auf logische Trennung
+- **> 500 Zeilen**: **Zwingend aufteilen**
+
+#### **Komplexitätskriterien:**
+```python
+# SCHLECHT: Alles in einer Datei
+class DataProcessor:
+    def validate_data(self): pass
+    def process_users(self): pass  
+    def send_emails(self): pass
+    def generate_reports(self): pass
+    def cleanup_files(self): pass
+
+# GUT: Logische Trennung
+# core/data_processor.py
+class DataProcessor:
+    def validate_data(self): pass
+    def process_data(self): pass
+
+# services/email_service.py  
+class EmailService:
+    def send_notification_emails(self): pass
+
+# services/report_service.py
+class ReportService:
+    def generate_daily_report(self): pass
+```
+
+#### **Teilungsindikatoren:**
+- **Mehr als 5 Klassen** pro Datei
+- **Mehr als 10 Funktionen** pro Klasse
+- **Import-Liste > 15 Zeilen**
+- **Verschiedene Domains** in einer Datei (User + Email + Reports)
+
+## 🏗️ Anwendungs-Layer-Architektur
+
+### Layer 1: **Entry Point Layer** (`main.py`)
+```python
+# main.py - Job Entry Point
+import sys
+from core.job_orchestrator import JobOrchestrator
+from utils.logger import get_logger
+
+def main():
+    logger = get_logger(__name__)
+    logger.info("Starting job execution")
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.run()
+        logger.info(f"Job completed successfully: {result}")
+        sys.exit(0)
+    except Exception as e:
+        logger.exception("Job failed with unexpected error")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+```
+
+**Verantwortlichkeiten:**
+- Job-Initialisierung und -Beendigung
+- Command-Line-Arguments-Parsing
+- Exit-Code-Management
+- Top-Level-Error-Handling
+
+### Layer 2: **Core Business Logic** (`core/`)
+```python
+# core/job_orchestrator.py
+class JobOrchestrator:
+    def __init__(self):
+        self.user_service = UserService()
+        self.email_service = EmailService()  
+        self.report_service = ReportService()
+        
+    def run(self):
+        # Orchestriert Job-Logik
+        users = self.user_service.get_active_users()
+        reports = self.report_service.generate_reports(users)
+        self.email_service.send_reports(reports)
+        return {"processed_users": len(users), "reports_sent": len(reports)}
+```
+
+**Verantwortlichkeiten:**
+- Job-Workflow-Orchestrierung
+- Domain-Logic-Koordination
+- Progress-Tracking
+- Business-Rules-Validation
+
+### Layer 3: **Service Layer** (`services/`)
+```python
+# services/user_service.py
+class UserService:
+    def __init__(self):
+        self.db = DatabaseService()
+        
+    def get_active_users(self):
+        # Abstraktion für User-Operations
+        return self.db.fetch_active_users()
+```
+
+**Verantwortlichkeiten:**
+- Abstraktion externer APIs/Datenbanken
+- Datentransformation
+- Error-Handling für externe Calls
+- Retry-Logic
+
+### Layer 4: **Data/Infrastructure Layer** (`models/`, `utils/`)
+```python
+# models/job_models.py
+class JobResult(BaseModel):
+    status: str
+    processed_count: int
+    execution_time: float
+    errors: List[str] = []
+
+# utils/database.py
+class DatabaseService:
+    def fetch_active_users(self):
+        # Low-level Datenbankzugriff
+        pass
+```
+
+**Verantwortlichkeiten:**
+- Datenmodell-Definitionen
+- Datenbankzugriff
+- Externe API-Clients
+- Utility-Funktionen
+
+## 🔄 Layer-Kommunikation
+
+### **Erlaubte Abhängigkeiten:**
+```
+Entry Point → Core Layer → Service Layer → Data Layer
+     ↓           ↓            ↓             ↓
+   utils/     utils/      utils/        utils/
+```
+
+### **Verbotene Abhängigkeiten:**
+```
+❌ Service Layer → Core Layer
+❌ Data Layer → Service Layer  
+❌ Circular Dependencies zwischen Services
+```
+
+## 📋 Checkliste für neue Projekte
+
+### **Projekt-Setup:**
+- [ ] Ordnerstruktur nach Vorlage erstellt
+- [ ] `requirements.txt` mit Base-Dependencies
+- [ ] `.env.example` mit allen benötigten Variablen
+- [ ] `config.py` mit Environment-Handling
+- [ ] Docker-Setup (Dockerfile + docker-compose.yml)
+- [ ] `.gitignore` für Python-Projekte
+
+### **Code-Qualität:**
+- [ ] `pytest.ini` konfiguriert
+- [ ] Logger in `utils/logger.py` eingerichtet
+- [ ] Base-Models in `models/` definiert
+- [ ] Retry-Mechanismus in `utils/retry.py`
+- [ ] Error-Handling-Standards definiert
+
+### **Security (falls benötigt):**
+- [ ] Encryption-Utils in `utils/encryption.py`
+- [ ] Environment-Variable-Validation
+- [ ] API-Key-Rotation-Mechanismus
+- [ ] GDPR-Compliance-Prüfung
+
+### **Documentation:**
+- [ ] README.md mit Projekt-Übersicht
+- [ ] Job-Dokumentation in `docs/JOB_DOCUMENTATION.md`
+- [ ] Deployment-Anleitung in `docs/DEPLOYMENT.md`
+- [ ] CHANGELOG.md für Versionierung
+
+## 🎯 Beispiel-Implementation
+
+### Minimales Job-Projekt:
+```python
+# main.py
+import sys
+import os
+from core.job_orchestrator import JobOrchestrator
+from utils.logger import get_logger
+
+def main():
+    logger = get_logger(__name__)
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.execute()
+        logger.info(f"Job completed: {result}")
+        return 0
+    except Exception as e:
+        logger.exception("Job execution failed")
+        return 1
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)
+```
+
+### Standard docker-compose.yml:
+```yaml
+version: '3.8'
+
+services:
+  job:
+    build: .
+    environment:
+      - LOG_LEVEL=INFO
+      - JOB_TIMEOUT=3600
+      - MAX_RETRIES=3
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/logs:/app/logs  # Persistent logs
+    working_dir: /app
+    restart: "no"  # Jobs should not restart automatically
+```
+
+## 📦 Dependency Management
+
+### Requirements.txt Standards
+```txt
+# requirements.txt - Pinned Versions für Production
+pydantic==2.5.0
+requests==2.31.0
+psycopg2-binary==2.9.7
+click==8.1.7  # For CLI arguments
+
+# Development Dependencies in separate file
+# requirements-dev.txt
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+```
+
+### Versionierung-Strategie
+- **Production**: Exakte Versionen (`==2.5.0`)
+- **Development**: Compatible Versionen (`>=2.5.0,<3.0.0`)
+- **Security Updates**: Regelmäßige Updates alle 4 Wochen
+
+## 🧪 Testing Standards
+
+### Test-Struktur & Patterns
+```python
+# tests/test_core/test_job_orchestrator.py
+import pytest
+from unittest.mock import Mock, patch
+from core.job_orchestrator import JobOrchestrator
+
+class TestJobOrchestrator:
+    @pytest.fixture
+    def orchestrator(self):
+        return JobOrchestrator()
+    
+    def test_execute_success(self, orchestrator):
+        # Arrange
+        with patch.object(orchestrator, 'user_service') as mock_service:
+            mock_service.get_active_users.return_value = [{"id": "123"}]
+        
+        # Act
+        result = orchestrator.execute()
+        
+        # Assert
+        assert result["processed_users"] == 1
+        mock_service.get_active_users.assert_called_once()
+```
+
+### pytest.ini Konfiguration
+```ini
+[tool:pytest]
+testpaths = tests/
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = 
+    --verbose
+    --tb=short
+    --cov=.
+    --cov-report=html
+    --cov-report=term-missing
+    --cov-fail-under=80
+```
+
+### Test-Kategorien
+- **Unit Tests**: Einzelne Funktionen/Klassen (`tests/test_core/`)
+- **Integration Tests**: Service-Kombinationen (`tests/test_integration/`)
+- **End-to-End Tests**: Komplette Job-Ausführung (`tests/test_e2e/`)
+
+## 🛡️ Error Handling Patterns
+
+### Layer-spezifische Error-Behandlung
+
+#### **Layer 1: Entry Point Layer (`main.py`)**
+**Verantwortlichkeiten:**
+- **Argument-Validierung**: Command-Line-Arguments validieren
+- **Exit-Code-Management**: Korrekte Exit-Codes setzen  
+- **Error-Logging**: Top-Level-Fehler loggen
+- **Resource-Cleanup**: Finale Aufräumarbeiten
+
+```python
+# main.py - Entry Point Error Handling
+def main():
+    logger = get_logger(__name__)
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.execute()
+        logger.info(f"Job completed successfully: {result}")
+        return EXIT_SUCCESS
+    except ValidationError as e:
+        logger.error(f"Data validation failed: {e.message}")
+        return EXIT_DATA_ERROR
+    except ConfigurationError as e:
+        logger.error(f"Configuration error: {e.message}")
+        return EXIT_CONFIG_ERROR
+    except TimeoutError:
+        logger.error("Job execution timeout reached")
+        return EXIT_TIMEOUT
+    except Exception as e:
+        logger.exception("Unexpected error during job execution")
+        return EXIT_FAILURE
+    finally:
+        # Cleanup resources
+        cleanup_temp_files()
+```
+
+#### **Layer 2: Core Business Logic (`core/`)**
+**Verantwortlichkeiten:**
+- **Business Rule Violations**: Domain-spezifische Errors
+- **Job-Koordination**: Service-Errors weiterleiten oder transformieren
+- **Progress-Tracking**: Job-Fortschritt verfolgen
+- **Partial-Success-Handling**: Teil-Erfolge behandeln
+
+```python
+# core/job_orchestrator.py - Core Layer Error Handling
+class JobOrchestrator:
+    def execute(self):
+        processed_count = 0
+        errors = []
+        
+        try:
+            users = self.user_service.get_active_users()
+            for user in users:
+                try:
+                    self.process_single_user(user)
+                    processed_count += 1
+                except ValidationError as e:
+                    logger.warning(f"User processing failed: {e.error_code}", extra={"user_id": user.id})
+                    errors.append(f"User {user.id}: {e.message}")
+                    continue  # Continue with next user
+                except ExternalAPIError as e:
+                    logger.error(f"External service failed: {e.error_code}")
+                    # Critical error - stop processing
+                    raise BusinessLogicError("Job processing failed", error_code="JOB_001")
+            
+            return {"processed": processed_count, "errors": errors}
+        except Exception as e:
+            logger.exception("Critical error in job orchestration")
+            raise
+```
+
+#### **Layer 3: Service Layer (`services/`)**
+**Verantwortlichkeiten:**
+- **External API Errors**: HTTP-Codes zu App-Exceptions konvertieren
+- **Retry-Logic**: Transiente Fehler automatisch wiederholen
+- **Circuit Breaker**: Überlastete Services abschalten
+- **Data Transformation**: Format-Fehler behandeln
+
+```python
+# services/external_service.py - Service Layer Error Handling
+class ExternalAPIService:
+    def fetch_user_data(self, user_id: str):
+        max_retries = int(os.getenv("MAX_RETRIES", 3))
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(f"/api/users/{user_id}", timeout=30)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code >= 500 and attempt < max_retries - 1:
+                    logger.warning(f"API server error, retrying (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                elif e.response.status_code == 404:
+                    raise ValidationError(f"User {user_id} not found", error_code="USER_NOT_FOUND")
+                else:
+                    raise ExternalAPIError("External API error", error_code="EXT_API_001")
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error, retrying (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise ExternalAPIError("Network connection failed", error_code="NETWORK_001")
+```
+
+#### **Layer 4: Data/Infrastructure Layer (`models/`, `utils/`)**
+**Verantwortlichkeiten:**
+- **Database Errors**: Connection, Query, Constraint Violations
+- **File System Errors**: Disk Full, Permissions
+- **Network Errors**: Timeouts, DNS Resolution
+- **Resource Cleanup**: Connections, Files, Locks freigeben
+
+```python
+# utils/database.py - Data Layer Error Handling
+class DatabaseService:
+    def fetch_active_users(self):
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE active = true")
+                results = cursor.fetchall()
+                if not results:
+                    logger.info("No active users found")
+                    return []
+                return results
+        except psycopg2.OperationalError as e:
+            logger.critical(f"Database connection failed: {str(e)}")
+            raise DatabaseError("Database connection failed", error_code="DB_CONN_001")
+        except psycopg2.Error as e:
+            logger.error(f"Database query failed: {e.pgcode}")
+            raise DatabaseError("Database operation failed", error_code="DB_QUERY_001")
+        except Exception as e:
+            logger.exception("Unexpected database error")
+            raise DatabaseError("Unexpected database error", error_code="DB_UNKNOWN_001")
+```
+
+### Standard Exception-Hierarchie
+```python
+# utils/exceptions.py
+class BaseJobException(Exception):
+    """Basis-Exception für alle Job-spezifischen Errors"""
+    def __init__(self, message: str, error_code: str = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+
+class ValidationError(BaseJobException):
+    """Datenvalidierung fehlgeschlagen"""
+    pass
+
+class ConfigurationError(BaseJobException):
+    """Konfigurationsfehler"""
+    pass
+
+class BusinessLogicError(BaseJobException):
+    """Business Rules verletzt"""
+    pass
+
+class ExternalAPIError(BaseJobException):
+    """Externe API-Aufrufe fehlgeschlagen"""
+    pass
+
+class DatabaseError(BaseJobException):
+    """Datenbankoperationen fehlgeschlagen"""
+    pass
+
+class SystemError(BaseJobException):
+    """System-Level Fehler"""
+    pass
+```
+
+### Error-Handling-Regeln
+
+#### **Do's:**
+- **Fail Fast**: Kritische Fehler sofort beenden
+- **Error Codes**: Eindeutige Error-Codes für alle Exception-Types
+- **Layer-Appropriate**: Jeder Layer behandelt nur seine spezifischen Errors
+- **Logging**: Alle Errors mit Context-Informationen loggen
+- **Partial Success**: Bei Batch-Jobs einzelne Fehler tolerieren
+- **Resource Cleanup**: Immer Ressourcen freigeben
+
+#### **Don'ts:**
+- **Silent Failures**: Niemals Exceptions ignorieren oder verschlucken
+- **Generic Exceptions**: Keine generischen `Exception` oder `RuntimeError`
+- **Information Leakage**: Keine sensiblen Details in Logs
+- **Cross-Layer**: Service Layer soll nicht Core Layer Exceptions werfen
+- **PII in Logs**: Keine personenbezogenen Daten in Error-Messages
+
+
+
+## 🔍 Job Monitoring & Status
+
+### Progress Tracking
+```python
+# core/job_orchestrator.py - Progress Tracking
+class JobOrchestrator:
+    def execute(self):
+        total_items = len(self.get_items_to_process())
+        processed = 0
+        
+        logger.info(f"Starting job: {total_items} items to process")
+        
+        for item in self.get_items_to_process():
+            try:
+                self.process_item(item)
+                processed += 1
+                
+                # Log progress every 10%
+                if processed % max(1, total_items // 10) == 0:
+                    progress = (processed / total_items) * 100
+                    logger.info(f"Progress: {progress:.1f}% ({processed}/{total_items})")
+            except Exception as e:
+                logger.error(f"Failed to process item {item.id}: {e}")
+                continue
+        
+        logger.info(f"Job completed: {processed}/{total_items} items processed")
+        return {"total": total_items, "processed": processed}
+```
+
+
+
+### Logging Standards
+
+#### **Was wird geloggt?**
+
+**✅ Erlaubte Log-Inhalte:**
+- **System-IDs**: User-IDs, Job-IDs, Batch-IDs, Transaction-IDs
+- **Performance-Metriken**: Processing-Times, Item-Counts, Memory-Usage
+- **Technical Details**: Exit-Codes, Error-Codes, Service-Names
+- **Business-Events**: "Job started", "Batch processed", "Report generated"
+- **System-Status**: "Database connection established", "File processed"
+
+**❌ Verbotene Log-Inhalte (GDPR/Privacy):**
+- **Personenbezogene Daten**: Namen, E-Mail-Adressen, Telefonnummern
+- **Sensitive Data**: Passwörter, API-Keys, Kreditkartennummern
+- **User Content**: Messages, Documents, Personal Files
+- **Location Data**: IP-Adressen, GPS-Koordinaten
+- **Financial Data**: Account-Numbers, Transaction-Details
+
+#### **Wann wird geloggt?**
+
+**Layer-spezifische Logging-Regeln:**
+
+**Entry Point Layer:**
+- **INFO**: Job start/end `"Job started: data-processing-job"`
+- **WARNING**: Configuration issues `"Using default timeout value"`
+- **ERROR**: Critical failures `"Job failed to initialize"`
+
+**Core Layer:**
+- **INFO**: Business workflows `"Processing batch 1/10"`
+- **WARNING**: Business rule violations `"Invalid data format detected"`
+- **ERROR**: Workflow failures `"Batch processing failed"`
+
+**Service Layer:**
+- **DEBUG**: External API calls `"Calling external service: user-api"`
+- **INFO**: Successful operations `"Retrieved 100 user records"`
+- **WARNING**: Retry attempts `"API call failed, retrying (attempt 2/3)"`
+- **ERROR**: Service failures `"External API unavailable after 3 retries"`
+
+**Data Layer:**
+- **DEBUG**: Database queries `"Executing query: SELECT count(*) FROM users"`
+- **INFO**: Data operations `"Processed 1000 database records"`
+- **WARNING**: Performance issues `"Database query took 5s (threshold: 2s)"`
+- **CRITICAL**: System failures `"Database connection pool exhausted"`
+
+#### **Log-Level-Guidelines:**
+- **DEBUG**: Development-Details, nur in Development-Environment
+- **INFO**: Normal Operations, Business-Events, Progress-Updates
+- **WARNING**: Potential Issues, Retries, Degraded Performance
+- **ERROR**: Failed Operations, Recoverable Errors
+- **CRITICAL**: System Failures, Job-Termination, Data Loss
+
+## 📋 Git Workflow Standards
+
+### Branch-Strategie (Simplified)
+```
+main            # Production-ready Code (deployed to production)
+testing         # Development Branch (all development happens here)
+```
+
+### Branch-Management-Regeln
+
+#### **Main Branch:**
+- **Zweck**: Production-ready Code, always deployable
+- **Protection**: Direct pushes blocked, nur via Pull Request von `testing`
+- **Deployment**: Automatisch zu Production-Environment
+- **Testing**: Vollständige Test-Suite muss passieren
+- **Code Review**: Mindestens 1 Reviewer erforderlich
+
+#### **Testing Branch:**
+- **Zweck**: Alle Development-Arbeit (Features, Bugfixes, Experimente)
+- **Development**: Direktes Arbeiten auf diesem Branch
+- **Deployment**: Automatisch zu Staging/Testing-Environment
+- **Testing**: Kontinuierliche Tests während Development
+- **Merge zu Main**: Nur nach erfolgreicher Validation und Testing
+
+### Workflow-Prozess
+1. **Development**: Alle Änderungen auf `testing` Branch
+2. **Testing**: Validierung im Staging-Environment
+3. **Pull Request**: Von `testing` zu `main` nach erfolgreichen Tests
+4. **Production**: Deployment nach Merge zu `main`
+
+### Commit Message Konventionen
+```
+# Format: <type>(<scope>): <description>
+
+feat(processor): add batch processing capability
+fix(db): resolve connection timeout issue
+docs(readme): update job execution instructions
+test(core): add unit tests for job orchestrator
+refactor(services): optimize database query performance
+```
+
+## 📚 Documentation Standards
+
+### Docstring Konventionen
+```python
+def process_user_batch(user_ids: List[str], batch_size: int = 100) -> dict:
+    """
+    Verarbeitet Benutzer-IDs in Batches und führt Validierung durch.
+    
+    Args:
+        user_ids (List[str]): Liste der zu verarbeitenden Benutzer-IDs
+        batch_size (int): Anzahl der Benutzer pro Batch (Standard: 100)
+        
+    Returns:
+        dict: Verarbeitungsstatistiken mit processed/failed counts
+        
+    Raises:
+        ValidationError: Wenn Benutzer-IDs ungültig sind
+        DatabaseError: Wenn Datenbankzugriff fehlschlägt
+        
+    Example:
+        >>> result = process_user_batch(["123", "456"], batch_size=50)
+        >>> print(result["processed"])
+        2
+    """
+```
+
+### README.md Template
+```markdown
+# Job-Name
+
+Kurze Beschreibung des Jobs und seiner Funktionalität.
+
+## 🚀 Quick Start
+
+\`\`\`bash
+# Installation
+pip install -r requirements.txt
+
+# Konfiguration
+cp .env.example .env
+
+# Ausführung
+python main.py
+\`\`\`
+
+## 📋 Job-Dokumentation
+
+- Exit-Codes: 0 = Success, 1 = Error, 2 = Config Error
+- Logs: Siehe `/app/logs/` für detaillierte Logs
+- Status: Status-Files in `/tmp/` während Ausführung
+
+## 🧪 Testing
+
+\`\`\`bash
+pytest tests/ --cov=.
+\`\`\`
+
+## 🚢 Deployment
+
+\`\`\`bash
+docker-compose up job
+\`\`\`
+```
+
+## 🔒 Security Guidelines
+
+### Environment Security
+```python
+# config.py - Sichere Konfiguration
+import os
+from typing import Optional
+
+def get_required_env(key: str) -> str:
+    """Sichere Umgebungsvariable mit Fehlermeldung"""
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Required environment variable {key} not set")
+    return value
+
+def get_optional_env(key: str, default: str = "") -> str:
+    """Optionale Umgebungsvariable mit Fallback"""
+    return os.getenv(key, default)
+
+# Verwendung
+DATABASE_URL = get_required_env("DATABASE_URL")
+DEBUG_MODE = get_optional_env("DEBUG", "false").lower() == "true"
+```
+
+## 📊 Pydantic Datamodels
+
+### Warum Pydantic?
+
+**Pydantic** ist die Standard-Bibliothek für Datenvalidierung und -serialisierung in modernen Python-Anwendungen. Sie gewährleistet Typsicherheit, automatische Validierung und klare Contracts zwischen Layern.
+
+### Wann Pydantic verwenden?
+
+#### **✅ Immer verwenden für:**
+
+**1. Job Input/Output Models**
+```python
+# Job Configuration Model
+class JobConfig(BaseModel):
+    batch_size: int = Field(default=100, ge=1, le=10000)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    timeout_seconds: int = Field(default=3600, ge=60)
+    
+# Job Result Model  
+class JobResult(BaseModel):
+    status: str
+    processed_count: int
+    error_count: int
+    execution_time: float
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+```
+
+**2. Service Layer Contracts**
+```python
+# Input für Data Processing
+class ProcessingInput(BaseModel):
+    user_ids: List[str] = Field(..., min_items=1)
+    processing_type: str = Field(..., regex="^(full|incremental|delta)$")
+    priority: int = Field(default=5, ge=1, le=10)
+    
+# Output für Processing Results
+class ProcessingResult(BaseModel):
+    batch_id: str
+    status: str
+    processed_items: int
+    failed_items: int
+    execution_time: float
+```
+
+**3. Configuration Models**
+```python
+# Typsichere Job-Konfiguration
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str
+    username: str
+    password: SecretStr
+    ssl_mode: str = "require"
+    
+    @validator('host')
+    def validate_host(cls, v):
+        if not v or v.isspace():
+            raise ValueError('Host cannot be empty')
+        return v
+```
+
+**4. External API Models**
+```python
+# External Service Response Model
+class UserAPIResponse(BaseModel):
+    id: str
+    email: str
+    status: str
+    last_login: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    class Config:
+        # Flexible für externe APIs
+        extra = "ignore"  # Unbekannte Felder ignorieren
+```
+
+#### **❌ Nicht verwenden für:**
+
+**1. Interne Data Classes (verwende dataclasses)**
+```python
+# Einfache interne Datenstrukturen
+from dataclasses import dataclass
+
+@dataclass
+class ProcessingStats:
+    items_processed: int
+    processing_time: float
+    memory_used: int
+```
+
+**2. ORM Models (verwende SQLAlchemy direkt)**
+```python
+# Database Models bleiben als SQLAlchemy
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+```
+
+**3. Utility Functions (verwende normale Type Hints)**
+```python
+# Normale Funktionen mit Type Hints
+def calculate_batch_size(total_items: int, max_batches: int = 10) -> int:
+    return max(1, total_items // max_batches)
+```
+
+### Layer-spezifische Pydantic-Nutzung
+
+#### **Entry Point Layer (`main.py`)**
+```python
+# Command Line Arguments Validation
+class JobArgs(BaseModel):
+    batch_size: int = Field(default=100, ge=1)
+    log_level: str = Field(default="INFO", regex="^(DEBUG|INFO|WARNING|ERROR)$")
+    dry_run: bool = False
+    
+def main():
+    args = parse_arguments()  # From argparse
+    config = JobArgs(**vars(args))  # Validate with Pydantic
+    orchestrator = JobOrchestrator(config)
+    result = orchestrator.execute()
+```
+
+#### **Core Layer (`core/`)**
+```python
+# Business Logic Input/Output
+class JobExecution(BaseModel):
+    job_id: str
+    config: JobConfig
+    started_at: datetime
+    status: str = "running"
+    
+class JobResult(BaseModel):
+    job_id: str
+    status: str
+    processed_count: int
+    execution_time: float
+    errors: List[str] = []
+```
+
+#### **Service Layer (`services/`)**
+```python
+# Service Contracts
+class DatabaseQuery(BaseModel):
+    query: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    timeout: int = Field(default=30, ge=1, le=300)
+    fetch_size: int = Field(default=1000, ge=1, le=10000)
+```
+
+### Pydantic Best Practices
+
+#### **1. Field Validation**
+```python
+class JobConfig(BaseModel):
+    batch_size: int = Field(..., ge=1, le=10000, description="Items per batch")
+    worker_count: int = Field(default=1, ge=1, le=20)
+    timeout: int = Field(default=3600, ge=60, description="Job timeout in seconds")
+    
+    @validator('timeout')
+    def timeout_reasonable(cls, v):
+        if v > 86400:  # 24 hours
+            raise ValueError('Timeout cannot exceed 24 hours')
+        return v
+```
+
+#### **2. Custom Validators**
+```python
+class ProcessingConfig(BaseModel):
+    processing_mode: str
+    thread_count: int
+    
+    @validator('thread_count')
+    def validate_thread_count(cls, v, values):
+        mode = values.get('processing_mode')
+        if mode == 'single' and v > 1:
+            raise ValueError('Single mode only allows 1 thread')
+        return v
+    
+    @root_validator
+    def validate_config_combination(cls, values):
+        mode = values.get('processing_mode')
+        threads = values.get('thread_count', 1)
+        if mode == 'batch' and threads > 10:
+            raise ValueError('Batch mode limited to 10 threads maximum')
+        return values
+```
+
+#### **3. Model Inheritance**
+```python
+class BaseJobModel(BaseModel):
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    job_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+
+class DataProcessingJob(BaseJobModel):
+    input_file: str
+    output_dir: str
+    processing_type: str
+    # created_at und job_id werden automatisch vererbt
+```
+
+### Job-spezifische Pydantic Integration
+
+```python
+# main.py - Job mit Pydantic Configuration
+class JobExecutor:
+    def __init__(self, config: JobConfig):
+        self.config = config
+        
+    def execute(self) -> JobResult:
+        """
+        Führt Job aus mit automatischer:
+        - Configuration-Validierung (Pydantic)
+        - Type Safety (mypy + Pydantic)
+        - Error Handling mit strukturierten Daten
+        """
+        start_time = time.time()
+        
+        try:
+            result = self.process_data()
+            execution_time = time.time() - start_time
+            
+            return JobResult(
+                status="success",
+                processed_count=result.processed,
+                error_count=0,
+                execution_time=execution_time,
+                started_at=datetime.utcnow()
+            )
+        except Exception as e:
+            execution_time = time.time() - start_time
+            return JobResult(
+                status="failed",
+                processed_count=0,
+                error_count=1,
+                execution_time=execution_time,
+                started_at=datetime.utcnow(),
+                errors=[str(e)]
+            )
+```
+
+**Vorteile dieser Pydantic-Strategie:**
+- **Typsicherheit**: Compile-time und Runtime-Validierung
+- **Configuration-Validation**: Automatische Job-Config-Prüfung
+- **Einheitliche Contracts**: Klare Contracts zwischen Job-Layern
+- **Fehlerbehandlung**: Strukturierte Fehler-Responses
+- **IDE-Support**: Autocomplete und Type-Checking
+
+Diese Vorlage gewährleistet konsistente, skalierbare und wartbare Python-Job-Projekte für Teams jeder Größe.# Standard-Projektvorlage für Python-Job-Anwendungen
+
+Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Job-Projekte. Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration für Programme, die gestartet werden und dann durchlaufen.
+
+## 📁 Standard-Ordnerstruktur
+
+```
+projekt-name/
+├── main.py                          # Hauptanwendung (Job Entry Point)
+├── config.py                        # Zentrale Konfiguration und Umgebungsvariablen
+├── requirements.txt                 # Python-Dependencies
+├── .env.example                     # Beispiel-Umgebungsvariablen
+├── docker-compose.yml               # Container-Orchestrierung
+├── Dockerfile                       # Container-Definition
+├── pytest.ini                      # Test-Konfiguration
+├── .gitignore                       # Git-Ausschlüsse
+├── README.md                        # Projekt-Dokumentation
+├── core/
+│   ├── __init__.py
+│   ├── job_orchestrator.py          # Hauptjob-Orchestrierung
+│   └── processor.py                 # Zentrale Verarbeitungslogik
+├── services/                        # Service-Layer (API-Integrationen)
+│   ├── __init__.py
+│   ├── database_service.py          # Datenbankzugriff
+│   ├── external_api_service.py      # Externe API-Integrationen
+│   └── file_service.py              # Dateiverwaltung
+├── models/                          # Datenmodelle (Pydantic/SQLAlchemy)
+│   ├── __init__.py
+│   ├── base_models.py               # Basis-Modelle
+│   └── job_models.py                # Job-spezifische Modelle
+├── utils/                           # Hilfsfunktionen und gemeinsame Tools
+│   ├── __init__.py
+│   ├── logger.py                    # Logging-Konfiguration
+│   ├── retry.py                     # Retry-Mechanismen
+│   ├── encryption.py                # Verschlüsselung (falls benötigt)
+│   └── validators.py                # Datenvalidierung
+├── tests/                           # Test-Suite
+│   ├── __init__.py
+│   ├── test_core/                   # Tests für core/
+│   ├── test_services/               # Tests für services/
+│   ├── test_models/                 # Tests für models/
+│   ├── test_utils/                  # Tests für utils/
+│   └── test_integration/            # Integrationstests
+└── docs/                            # Projektdokumentation
+    ├── CHANGELOG.md                 # Änderungsprotokoll
+    ├── JOB_DOCUMENTATION.md         # Job-Dokumentation
+    └── DEPLOYMENT.md                # Deployment-Anleitung
+```
+
+## 🏷️ Namenskonventionen
+
+### Dateien und Ordner
+- **Snake_case**: `user_service.py`, `order_models.py`
+- **Aussagekräftige Namen**: `authentication_manager.py` statt `auth.py`
+- **Singular für Module**: `user_model.py` nicht `users_models.py`
+- **Plural für Collections**: `models/`, `services/`, `tests/`
+
+### Python-Code
+```python
+# Klassen: PascalCase
+class UserAuthenticationManager:
+    pass
+
+# Funktionen/Variablen: snake_case
+def process_user_data():
+    user_email = "test@example.com"
+
+# Konstanten: UPPER_SNAKE_CASE
+DATABASE_CONNECTION_TIMEOUT = 30
+API_BASE_URL = "https://api.example.com"
+
+# Private Methoden: _leading_underscore
+def _validate_internal_data():
+    pass
+```
+
+### Environment Variables
+```bash
+# Format: PROJEKT_KATEGORIE_VARIABLE
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+MYAPP_API_KEY=secret-key
+MYAPP_LOG_LEVEL=INFO
+```
+
+## ⚙️ Standardeinstellungen
+
+### Ausführungsparameter
+```python
+# config.py - Standard Konfiguration für Job-Anwendungen
+JOB_TIMEOUT = 3600  # Standard Job-Timeout in Sekunden (1 Stunde)
+MAX_RETRIES = 3     # Standard Retry-Anzahl bei Fehlern
+BATCH_SIZE = 100    # Standard Batch-Größe für Datenverarbeitung
+```
+
+### Exit-Codes
+```python
+# config.py - Standard Exit-Codes
+EXIT_SUCCESS = 0        # Job erfolgreich beendet
+EXIT_FAILURE = 1        # Job mit allgemeinem Fehler beendet
+EXIT_CONFIG_ERROR = 2   # Konfigurationsfehler
+EXIT_DATA_ERROR = 3     # Datenvalidierungsfehler
+EXIT_TIMEOUT = 4        # Job-Timeout erreicht
+```
+
+### Debug/Log Levels
+```python
+# .env - Environment Variable (Standard: INFO für Production Jobs)
+LOG_LEVEL=INFO
+
+# config.py - Environment-Variable Handling
+import os
+from utils.logger import get_logger
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# utils/logger.py - Logger-Konfiguration
+import logging
+import os
+
+def get_logger(name: str):
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    return logging.getLogger(name)
+```
+
+### Standard .env.example
+```bash
+# Standard Environment Configuration
+LOG_LEVEL=INFO
+JOB_TIMEOUT=3600
+MAX_RETRIES=3
+BATCH_SIZE=100
+
+# Application specific variables
+MYAPP_API_KEY=your-api-key-here
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+```
+
+## 📏 Datei-Teilungskriterien
+
+### Wann Dateien aufteilen?
+
+#### **Größenkriterien:**
+- **< 200 Zeilen**: Optimal, keine Teilung nötig
+- **200-500 Zeilen**: Überprüfen auf logische Trennung
+- **> 500 Zeilen**: **Zwingend aufteilen**
+
+#### **Komplexitätskriterien:**
+```python
+# SCHLECHT: Alles in einer Datei
+class DataProcessor:
+    def validate_data(self): pass
+    def process_users(self): pass  
+    def send_emails(self): pass
+    def generate_reports(self): pass
+    def cleanup_files(self): pass
+
+# GUT: Logische Trennung
+# core/data_processor.py
+class DataProcessor:
+    def validate_data(self): pass
+    def process_data(self): pass
+
+# services/email_service.py  
+class EmailService:
+    def send_notification_emails(self): pass
+
+# services/report_service.py
+class ReportService:
+    def generate_daily_report(self): pass
+```
+
+#### **Teilungsindikatoren:**
+- **Mehr als 5 Klassen** pro Datei
+- **Mehr als 10 Funktionen** pro Klasse
+- **Import-Liste > 15 Zeilen**
+- **Verschiedene Domains** in einer Datei (User + Email + Reports)
+
+## 🏗️ Anwendungs-Layer-Architektur
+
+### Layer 1: **Entry Point Layer** (`main.py`)
+```python
+# main.py - Job Entry Point
+import sys
+from core.job_orchestrator import JobOrchestrator
+from utils.logger import get_logger
+
+def main():
+    logger = get_logger(__name__)
+    logger.info("Starting job execution")
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.run()
+        logger.info(f"Job completed successfully: {result}")
+        sys.exit(0)
+    except Exception as e:
+        logger.exception("Job failed with unexpected error")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+```
+
+**Verantwortlichkeiten:**
+- Job-Initialisierung und -Beendigung
+- Command-Line-Arguments-Parsing
+- Exit-Code-Management
+- Top-Level-Error-Handling
+
+### Layer 2: **Core Business Logic** (`core/`)
+```python
+# core/job_orchestrator.py
+class JobOrchestrator:
+    def __init__(self):
+        self.user_service = UserService()
+        self.email_service = EmailService()  
+        self.report_service = ReportService()
+        
+    def run(self):
+        # Orchestriert Job-Logik
+        users = self.user_service.get_active_users()
+        reports = self.report_service.generate_reports(users)
+        self.email_service.send_reports(reports)
+        return {"processed_users": len(users), "reports_sent": len(reports)}
+```
+
+**Verantwortlichkeiten:**
+- Job-Workflow-Orchestrierung
+- Domain-Logic-Koordination
+- Progress-Tracking
+- Business-Rules-Validation
+
+### Layer 3: **Service Layer** (`services/`)
+```python
+# services/user_service.py
+class UserService:
+    def __init__(self):
+        self.db = DatabaseService()
+        
+    def get_active_users(self):
+        # Abstraktion für User-Operations
+        return self.db.fetch_active_users()
+```
+
+**Verantwortlichkeiten:**
+- Abstraktion externer APIs/Datenbanken
+- Datentransformation
+- Error-Handling für externe Calls
+- Retry-Logic
+
+### Layer 4: **Data/Infrastructure Layer** (`models/`, `utils/`)
+```python
+# models/job_models.py
+class JobResult(BaseModel):
+    status: str
+    processed_count: int
+    execution_time: float
+    errors: List[str] = []
+
+# utils/database.py
+class DatabaseService:
+    def fetch_active_users(self):
+        # Low-level Datenbankzugriff
+        pass
+```
+
+**Verantwortlichkeiten:**
+- Datenmodell-Definitionen
+- Datenbankzugriff
+- Externe API-Clients
+- Utility-Funktionen
+
+## 🔄 Layer-Kommunikation
+
+### **Erlaubte Abhängigkeiten:**
+```
+Entry Point → Core Layer → Service Layer → Data Layer
+     ↓           ↓            ↓             ↓
+   utils/     utils/      utils/        utils/
+```
+
+### **Verbotene Abhängigkeiten:**
+```
+❌ Service Layer → Core Layer
+❌ Data Layer → Service Layer  
+❌ Circular Dependencies zwischen Services
+```
+
+## 📋 Checkliste für neue Projekte
+
+### **Projekt-Setup:**
+- [ ] Ordnerstruktur nach Vorlage erstellt
+- [ ] `requirements.txt` mit Base-Dependencies
+- [ ] `.env.example` mit allen benötigten Variablen
+- [ ] `config.py` mit Environment-Handling
+- [ ] Docker-Setup (Dockerfile + docker-compose.yml)
+- [ ] `.gitignore` für Python-Projekte
+
+### **Code-Qualität:**
+- [ ] `pytest.ini` konfiguriert
+- [ ] Logger in `utils/logger.py` eingerichtet
+- [ ] Base-Models in `models/` definiert
+- [ ] Retry-Mechanismus in `utils/retry.py`
+- [ ] Error-Handling-Standards definiert
+
+### **Security (falls benötigt):**
+- [ ] Encryption-Utils in `utils/encryption.py`
+- [ ] Environment-Variable-Validation
+- [ ] API-Key-Rotation-Mechanismus
+- [ ] GDPR-Compliance-Prüfung
+
+### **Documentation:**
+- [ ] README.md mit Projekt-Übersicht
+- [ ] Job-Dokumentation in `docs/JOB_DOCUMENTATION.md`
+- [ ] Deployment-Anleitung in `docs/DEPLOYMENT.md`
+- [ ] CHANGELOG.md für Versionierung
+
+## 🎯 Beispiel-Implementation
+
+### Minimales Job-Projekt:
+```python
+# main.py
+import sys
+import os
+from core.job_orchestrator import JobOrchestrator
+from utils.logger import get_logger
+
+def main():
+    logger = get_logger(__name__)
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.execute()
+        logger.info(f"Job completed: {result}")
+        return 0
+    except Exception as e:
+        logger.exception("Job execution failed")
+        return 1
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)
+```
+
+### Standard docker-compose.yml:
+```yaml
+version: '3.8'
+
+services:
+  job:
+    build: .
+    environment:
+      - LOG_LEVEL=INFO
+      - JOB_TIMEOUT=3600
+      - MAX_RETRIES=3
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/logs:/app/logs  # Persistent logs
+    working_dir: /app
+    restart: "no"  # Jobs should not restart automatically
+```
+
+## 📦 Dependency Management
+
+### Requirements.txt Standards
+```txt
+# requirements.txt - Pinned Versions für Production
+pydantic==2.5.0
+requests==2.31.0
+psycopg2-binary==2.9.7
+click==8.1.7  # For CLI arguments
+
+# Development Dependencies in separate file
+# requirements-dev.txt
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+```
+
+### Versionierung-Strategie
+- **Production**: Exakte Versionen (`==2.5.0`)
+- **Development**: Compatible Versionen (`>=2.5.0,<3.0.0`)
+- **Security Updates**: Regelmäßige Updates alle 4 Wochen
+
+## 🧪 Testing Standards
+
+### Test-Struktur & Patterns
+```python
+# tests/test_core/test_job_orchestrator.py
+import pytest
+from unittest.mock import Mock, patch
+from core.job_orchestrator import JobOrchestrator
+
+class TestJobOrchestrator:
+    @pytest.fixture
+    def orchestrator(self):
+        return JobOrchestrator()
+    
+    def test_execute_success(self, orchestrator):
+        # Arrange
+        with patch.object(orchestrator, 'user_service') as mock_service:
+            mock_service.get_active_users.return_value = [{"id": "123"}]
+        
+        # Act
+        result = orchestrator.execute()
+        
+        # Assert
+        assert result["processed_users"] == 1
+        mock_service.get_active_users.assert_called_once()
+```
+
+### pytest.ini Konfiguration
+```ini
+[tool:pytest]
+testpaths = tests/
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = 
+    --verbose
+    --tb=short
+    --cov=.
+    --cov-report=html
+    --cov-report=term-missing
+    --cov-fail-under=80
+```
+
+### Test-Kategorien
+- **Unit Tests**: Einzelne Funktionen/Klassen (`tests/test_core/`)
+- **Integration Tests**: Service-Kombinationen (`tests/test_integration/`)
+- **End-to-End Tests**: Komplette Job-Ausführung (`tests/test_e2e/`)
+
+## 🛡️ Error Handling Patterns
+
+### Layer-spezifische Error-Behandlung
+
+#### **Layer 1: Entry Point Layer (`main.py`)**
+**Verantwortlichkeiten:**
+- **Argument-Validierung**: Command-Line-Arguments validieren
+- **Exit-Code-Management**: Korrekte Exit-Codes setzen  
+- **Error-Logging**: Top-Level-Fehler loggen
+- **Resource-Cleanup**: Finale Aufräumarbeiten
+
+```python
+# main.py - Entry Point Error Handling
+def main():
+    logger = get_logger(__name__)
+    
+    try:
+        orchestrator = JobOrchestrator()
+        result = orchestrator.execute()
+        logger.info(f"Job completed successfully: {result}")
+        return EXIT_SUCCESS
+    except ValidationError as e:
+        logger.error(f"Data validation failed: {e.message}")
+        return EXIT_DATA_ERROR
+    except ConfigurationError as e:
+        logger.error(f"Configuration error: {e.message}")
+        return EXIT_CONFIG_ERROR
+    except TimeoutError:
+        logger.error("Job execution timeout reached")
+        return EXIT_TIMEOUT
+    except Exception as e:
+        logger.exception("Unexpected error during job execution")
+        return EXIT_FAILURE
+    finally:
+        # Cleanup resources
+        cleanup_temp_files()
+```
+
+#### **Layer 2: Core Business Logic (`core/`)**
+**Verantwortlichkeiten:**
+- **Business Rule Violations**: Domain-spezifische Errors
+- **Job-Koordination**: Service-Errors weiterleiten oder transformieren
+- **Progress-Tracking**: Job-Fortschritt verfolgen
+- **Partial-Success-Handling**: Teil-Erfolge behandeln
+
+```python
+# core/job_orchestrator.py - Core Layer Error Handling
+class JobOrchestrator:
+    def execute(self):
+        processed_count = 0
+        errors = []
+        
+        try:
+            users = self.user_service.get_active_users()
+            for user in users:
+                try:
+                    self.process_single_user(user)
+                    processed_count += 1
+                except ValidationError as e:
+                    logger.warning(f"User processing failed: {e.error_code}", extra={"user_id": user.id})
+                    errors.append(f"User {user.id}: {e.message}")
+                    continue  # Continue with next user
+                except ExternalAPIError as e:
+                    logger.error(f"External service failed: {e.error_code}")
+                    # Critical error - stop processing
+                    raise BusinessLogicError("Job processing failed", error_code="JOB_001")
+            
+            return {"processed": processed_count, "errors": errors}
+        except Exception as e:
+            logger.exception("Critical error in job orchestration")
+            raise
+```
+
+#### **Layer 3: Service Layer (`services/`)**
+**Verantwortlichkeiten:**
+- **External API Errors**: HTTP-Codes zu App-Exceptions konvertieren
+- **Retry-Logic**: Transiente Fehler automatisch wiederholen
+- **Circuit Breaker**: Überlastete Services abschalten
+- **Data Transformation**: Format-Fehler behandeln
+
+```python
+# services/external_service.py - Service Layer Error Handling
+class ExternalAPIService:
+    def fetch_user_data(self, user_id: str):
+        max_retries = int(os.getenv("MAX_RETRIES", 3))
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(f"/api/users/{user_id}", timeout=30)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code >= 500 and attempt < max_retries - 1:
+                    logger.warning(f"API server error, retrying (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                elif e.response.status_code == 404:
+                    raise ValidationError(f"User {user_id} not found", error_code="USER_NOT_FOUND")
+                else:
+                    raise ExternalAPIError("External API error", error_code="EXT_API_001")
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error, retrying (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise ExternalAPIError("Network connection failed", error_code="NETWORK_001")
+```
+
+#### **Layer 4: Data/Infrastructure Layer (`models/`, `utils/`)**
+**Verantwortlichkeiten:**
+- **Database Errors**: Connection, Query, Constraint Violations
+- **File System Errors**: Disk Full, Permissions
+- **Network Errors**: Timeouts, DNS Resolution
+- **Resource Cleanup**: Connections, Files, Locks freigeben
+
+```python
+# utils/database.py - Data Layer Error Handling
+class DatabaseService:
+    def fetch_active_users(self):
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE active = true")
+                results = cursor.fetchall()
+                if not results:
+                    logger.info("No active users found")
+                    return []
+                return results
+        except psycopg2.OperationalError as e:
+            logger.critical(f"Database connection failed: {str(e)}")
+            raise DatabaseError("Database connection failed", error_code="DB_CONN_001")
+        except psycopg2.Error as e:
+            logger.error(f"Database query failed: {e.pgcode}")
+            raise DatabaseError("Database operation failed", error_code="DB_QUERY_001")
+        except Exception as e:
+            logger.exception("Unexpected database error")
+            raise DatabaseError("Unexpected database error", error_code="DB_UNKNOWN_001")
+```
+
+### Standard Exception-Hierarchie
+```python
+# utils/exceptions.py
+class BaseJobException(Exception):
+    """Basis-Exception für alle Job-spezifischen Errors"""
+    def __init__(self, message: str, error_code: str = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+
+class ValidationError(BaseJobException):
+    """Datenvalidierung fehlgeschlagen"""
+    pass
+
+class ConfigurationError(BaseJobException):
+    """Konfigurationsfehler"""
+    pass
+
+class BusinessLogicError(BaseJobException):
+    """Business Rules verletzt"""
+    pass
+
+class ExternalAPIError(BaseJobException):
+    """Externe API-Aufrufe fehlgeschlagen"""
+    pass
+
+class DatabaseError(BaseJobException):
+    """Datenbankoperationen fehlgeschlagen"""
+    pass
+
+class SystemError(BaseJobException):
+    """System-Level Fehler"""
+    pass
+```
+
+### Error-Handling-Regeln
+
+#### **Do's:**
+- **Fail Fast**: Kritische Fehler sofort beenden
+- **Error Codes**: Eindeutige Error-Codes für alle Exception-Types
+- **Layer-Appropriate**: Jeder Layer behandelt nur seine spezifischen Errors
+- **Logging**: Alle Errors mit Context-Informationen loggen
+- **Partial Success**: Bei Batch-Jobs einzelne Fehler tolerieren
+- **Resource Cleanup**: Immer Ressourcen freigeben
+
+#### **Don'ts:**
+- **Silent Failures**: Niemals Exceptions ignorieren oder verschlucken
+- **Generic Exceptions**: Keine generischen `Exception` oder `RuntimeError`
+- **Information Leakage**: Keine sensiblen Details in Logs
+- **Cross-Layer**: Service Layer soll nicht Core Layer Exceptions werfen
+- **PII in Logs**: Keine personenbezogenen Daten in Error-Messages
+
+
+
+## 🔍 Job Monitoring & Status
+
+### Progress Tracking
+```python
+# core/job_orchestrator.py - Progress Tracking
+class JobOrchestrator:
+    def execute(self):
+        total_items = len(self.get_items_to_process())
+        processed = 0
+        
+        logger.info(f"Starting job: {total_items} items to process")
+        
+        for item in self.get_items_to_process():
+            try:
+                self.process_item(item)
+                processed += 1
+                
+                # Log progress every 10%
+                if processed % max(1, total_items // 10) == 0:
+                    progress = (processed / total_items) * 100
+                    logger.info(f"Progress: {progress:.1f}% ({processed}/{total_items})")
+            except Exception as e:
+                logger.error(f"Failed to process item {item.id}: {e}")
+                continue
+        
+        logger.info(f"Job completed: {processed}/{total_items} items processed")
+        return {"total": total_items, "processed": processed}
+```
+
+
+
+### Logging Standards
+
+#### **Was wird geloggt?**
+
+**✅ Erlaubte Log-Inhalte:**
+- **System-IDs**: User-IDs, Job-IDs, Batch-IDs, Transaction-IDs
+- **Performance-Metriken**: Processing-Times, Item-Counts, Memory-Usage
+- **Technical Details**: Exit-Codes, Error-Codes, Service-Names
+- **Business-Events**: "Job started", "Batch processed", "Report generated"
+- **System-Status**: "Database connection established", "File processed"
+
+**❌ Verbotene Log-Inhalte (GDPR/Privacy):**
+- **Personenbezogene Daten**: Namen, E-Mail-Adressen, Telefonnummern
+- **Sensitive Data**: Passwörter, API-Keys, Kreditkartennummern
+- **User Content**: Messages, Documents, Personal Files
+- **Location Data**: IP-Adressen, GPS-Koordinaten
+- **Financial Data**: Account-Numbers, Transaction-Details
+
+#### **Wann wird geloggt?**
+
+**Layer-spezifische Logging-Regeln:**
+
+**Entry Point Layer:**
+- **INFO**: Job start/end `"Job started: data-processing-job"`
+- **WARNING**: Configuration issues `"Using default timeout value"`
+- **ERROR**: Critical failures `"Job failed to initialize"`
+
+**Core Layer:**
+- **INFO**: Business workflows `"Processing batch 1/10"`
+- **WARNING**: Business rule violations `"Invalid data format detected"`
+- **ERROR**: Workflow failures `"Batch processing failed"`
+
+**Service Layer:**
+- **DEBUG**: External API calls `"Calling external service: user-api"`
+- **INFO**: Successful operations `"Retrieved 100 user records"`
+- **WARNING**: Retry attempts `"API call failed, retrying (attempt 2/3)"`
+- **ERROR**: Service failures `"External API unavailable after 3 retries"`
+
+**Data Layer:**
+- **DEBUG**: Database queries `"Executing query: SELECT count(*) FROM users"`
+- **INFO**: Data operations `"Processed 1000 database records"`
+- **WARNING**: Performance issues `"Database query took 5s (threshold: 2s)"`
+- **CRITICAL**: System failures `"Database connection pool exhausted"`
+
+#### **Log-Level-Guidelines:**
+- **DEBUG**: Development-Details, nur in Development-Environment
+- **INFO**: Normal Operations, Business-Events, Progress-Updates
+- **WARNING**: Potential Issues, Retries, Degraded Performance
+- **ERROR**: Failed Operations, Recoverable Errors
+- **CRITICAL**: System Failures, Job-Termination, Data Loss
+
+## 📋 Git Workflow Standards
+
+### Branch-Strategie (Simplified)
+```
+main            # Production-ready Code (deployed to production)
+testing         # Development Branch (all development happens here)
+```
+
+### Branch-Management-Regeln
+
+#### **Main Branch:**
+- **Zweck**: Production-ready Code, always deployable
+- **Protection**: Direct pushes blocked, nur via Pull Request von `testing`
+- **Deployment**: Automatisch zu Production-Environment
+- **Testing**: Vollständige Test-Suite muss passieren
+- **Code Review**: Mindestens 1 Reviewer erforderlich
+
+#### **Testing Branch:**
+- **Zweck**: Alle Development-Arbeit (Features, Bugfixes, Experimente)
+- **Development**: Direktes Arbeiten auf diesem Branch
+- **Deployment**: Automatisch zu Staging/Testing-Environment
+- **Testing**: Kontinuierliche Tests während Development
+- **Merge zu Main**: Nur nach erfolgreicher Validation und Testing
+
+### Workflow-Prozess
+1. **Development**: Alle Änderungen auf `testing` Branch
+2. **Testing**: Validierung im Staging-Environment
+3. **Pull Request**: Von `testing` zu `main` nach erfolgreichen Tests
+4. **Production**: Deployment nach Merge zu `main`
+
+### Commit Message Konventionen
+```
+# Format: <type>(<scope>): <description>
+
+feat(processor): add batch processing capability
+fix(db): resolve connection timeout issue
+docs(readme): update job execution instructions
+test(core): add unit tests for job orchestrator
+refactor(services): optimize database query performance
+```
+
+## 📚 Documentation Standards
+
+### Docstring Konventionen
+```python
+def process_user_batch(user_ids: List[str], batch_size: int = 100) -> dict:
+    """
+    Verarbeitet Benutzer-IDs in Batches und führt Validierung durch.
+    
+    Args:
+        user_ids (List[str]): Liste der zu verarbeitenden Benutzer-IDs
+        batch_size (int): Anzahl der Benutzer pro Batch (Standard: 100)
+        
+    Returns:
+        dict: Verarbeitungsstatistiken mit processed/failed counts
+        
+    Raises:
+        ValidationError: Wenn Benutzer-IDs ungültig sind
+        DatabaseError: Wenn Datenbankzugriff fehlschlägt
+        
+    Example:
+        >>> result = process_user_batch(["123", "456"], batch_size=50)
+        >>> print(result["processed"])
+        2
+    """
+```
+
+### README.md Template
+```markdown
+# Job-Name
+
+Kurze Beschreibung des Jobs und seiner Funktionalität.
+
+## 🚀 Quick Start
+
+\`\`\`bash
+# Installation
+pip install -r requirements.txt
+
+# Konfiguration
+cp .env.example .env
+
+# Ausführung
+python main.py
+\`\`\`
+
+## 📋 Job-Dokumentation
+
+- Exit-Codes: 0 = Success, 1 = Error, 2 = Config Error
+- Logs: Siehe `/app/logs/` für detaillierte Logs
+- Status: Status-Files in `/tmp/` während Ausführung
+
+## 🧪 Testing
+
+\`\`\`bash
+pytest tests/ --cov=.
+\`\`\`
+
+## 🚢 Deployment
+
+\`\`\`bash
+docker-compose up job
+\`\`\`
+```
+
+## 🔒 Security Guidelines
+
+### Environment Security
+```python
+# config.py - Sichere Konfiguration
+import os
+from typing import Optional
+
+def get_required_env(key: str) -> str:
+    """Sichere Umgebungsvariable mit Fehlermeldung"""
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Required environment variable {key} not set")
+    return value
+
+def get_optional_env(key: str, default: str = "") -> str:
+    """Optionale Umgebungsvariable mit Fallback"""
+    return os.getenv(key, default)
+
+# Verwendung
+DATABASE_URL = get_required_env("DATABASE_URL")
+DEBUG_MODE = get_optional_env("DEBUG", "false").lower() == "true"
+```
+
+## 📊 Pydantic Datamodels
+
+### Warum Pydantic?
+
+**Pydantic** ist die Standard-Bibliothek für Datenvalidierung und -serialisierung in modernen Python-Anwendungen. Sie gewährleistet Typsicherheit, automatische Validierung und klare Contracts zwischen Layern.
+
+### Wann Pydantic verwenden?
+
+#### **✅ Immer verwenden für:**
+
+**1. Job Input/Output Models**
+```python
+# Job Configuration Model
+class JobConfig(BaseModel):
+    batch_size: int = Field(default=100, ge=1, le=10000)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    timeout_seconds: int = Field(default=3600, ge=60)
+    
+# Job Result Model  
+class JobResult(BaseModel):
+    status: str
+    processed_count: int
+    error_count: int
+    execution_time: float
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+```
+
+**2. Service Layer Contracts**
+```python
+# Input für Data Processing
+class ProcessingInput(BaseModel):
+    user_ids: List[str] = Field(..., min_items=1)
+    processing_type: str = Field(..., regex="^(full|incremental|delta)$")
+    priority: int = Field(default=5, ge=1, le=10)
+    
+# Output für Processing Results
+class ProcessingResult(BaseModel):
+    batch_id: str
+    status: str
+    processed_items: int
+    failed_items: int
+    execution_time: float
+```
+
+**3. Configuration Models**
+```python
+# Typsichere Job-Konfiguration
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str
+    username: str
+    password: SecretStr
+    ssl_mode: str = "require"
+    
+    @validator('host')
+    def validate_host(cls, v):
+        if not v or v.isspace():
+            raise ValueError('Host cannot be empty')
+        return v
+```
+
+**4. External API Models**
+```python
+# External Service Response Model
+class UserAPIResponse(BaseModel):
+    id: str
+    email: str
+    status: str
+    last_login: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    class Config:
+        # Flexible für externe APIs
+        extra = "ignore"  # Unbekannte Felder ignorieren
+```
+
+#### **❌ Nicht verwenden für:**
+
+**1. Interne Data Classes (verwende dataclasses)**
+```python
+# Einfache interne Datenstrukturen
+from dataclasses import dataclass
+
+@dataclass
+class ProcessingStats:
+    items_processed: int
+    processing_time: float
+    memory_used: int
+```
+
+**2. ORM Models (verwende SQLAlchemy direkt)**
+```python
+# Database Models bleiben als SQLAlchemy
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+```
+
+**3. Utility Functions (verwende normale Type Hints)**
+```python
+# Normale Funktionen mit Type Hints
+def calculate_batch_size(total_items: int, max_batches: int = 10) -> int:
+    return max(1, total_items // max_batches)
+```
+
+### Layer-spezifische Pydantic-Nutzung
+
+#### **Entry Point Layer (`main.py`)**
+```python
+# Command Line Arguments Validation
+class JobArgs(BaseModel):
+    batch_size: int = Field(default=100, ge=1)
+    log_level: str = Field(default="INFO", regex="^(DEBUG|INFO|WARNING|ERROR)$")
+    dry_run: bool = False
+    
+def main():
+    args = parse_arguments()  # From argparse
+    config = JobArgs(**vars(args))  # Validate with Pydantic
+    orchestrator = JobOrchestrator(config)
+    result = orchestrator.execute()
+```
+
+#### **Core Layer (`core/`)**
+```python
+# Business Logic Input/Output
+class JobExecution(BaseModel):
+    job_id: str
+    config: JobConfig
+    started_at: datetime
+    status: str = "running"
+    
+class JobResult(BaseModel):
+    job_id: str
+    status: str
+    processed_count: int
+    execution_time: float
+    errors: List[str] = []
+```
+
+#### **Service Layer (`services/`)**
+```python
+# Service Contracts
+class DatabaseQuery(BaseModel):
+    query: str
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    timeout: int = Field(default=30, ge=1, le=300)
+    fetch_size: int = Field(default=1000, ge=1, le=10000)
+```
+
+### Pydantic Best Practices
+
+#### **1. Field Validation**
+```python
+class JobConfig(BaseModel):
+    batch_size: int = Field(..., ge=1, le=10000, description="Items per batch")
+    worker_count: int = Field(default=1, ge=1, le=20)
+    timeout: int = Field(default=3600, ge=60, description="Job timeout in seconds")
+    
+    @validator('timeout')
+    def timeout_reasonable(cls, v):
+        if v > 86400:  # 24 hours
+            raise ValueError('Timeout cannot exceed 24 hours')
+        return v
+```
+
+#### **2. Custom Validators**
+```python
+class ProcessingConfig(BaseModel):
+    processing_mode: str
+    thread_count: int
+    
+    @validator('thread_count')
+    def validate_thread_count(cls, v, values):
+        mode = values.get('processing_mode')
+        if mode == 'single' and v > 1:
+            raise ValueError('Single mode only allows 1 thread')
+        return v
+    
+    @root_validator
+    def validate_config_combination(cls, values):
+        mode = values.get('processing_mode')
+        threads = values.get('thread_count', 1)
+        if mode == 'batch' and threads > 10:
+            raise ValueError('Batch mode limited to 10 threads maximum')
+        return values
+```
+
+#### **3. Model Inheritance**
+```python
+class BaseJobModel(BaseModel):
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    job_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+
+class DataProcessingJob(BaseJobModel):
+    input_file: str
+    output_dir: str
+    processing_type: str
+    # created_at und job_id werden automatisch vererbt
+```
+
+### Job-spezifische Pydantic Integration
+
+```python
+# main.py - Job mit Pydantic Configuration
+class JobExecutor:
+    def __init__(self, config: JobConfig):
+        self.config = config
+        
+    def execute(self) -> JobResult:
+        """
+        Führt Job aus mit automatischer:
+        - Configuration-Validierung (Pydantic)
+        - Type Safety (mypy + Pydantic)
+        - Error Handling mit strukturierten Daten
+        """
+        start_time = time.time()
+        
+        try:
+            result = self.process_data()
+            execution_time = time.time() - start_time
+            
+            return JobResult(
+                status="success",
+                processed_count=result.processed,
+                error_count=0,
+                execution_time=execution_time,
+                started_at=datetime.utcnow()
+            )
+        except Exception as e:
+            execution_time = time.time() - start_time
+            return JobResult(
+                status="failed",
+                processed_count=0,
+                error_count=1,
+                execution_time=execution_time,
+                started_at=datetime.utcnow(),
+                errors=[str(e)]
+            )
+```
+
+**Vorteile dieser Pydantic-Strategie:**
+- **Typsicherheit**: Compile-time und Runtime-Validierung
+- **Configuration-Validation**: Automatische Job-Config-Prüfung
+- **Einheitliche Contracts**: Klare Contracts zwischen Job-Layern
+- **Fehlerbehandlung**: Strukturierte Fehler-Responses
+- **IDE-Support**: Autocomplete und Type-Checking
+
+Diese Vorlage gewährleistet konsistente, skalierbare und wartbare Python-Job-Projekte für Teams jeder Größe.

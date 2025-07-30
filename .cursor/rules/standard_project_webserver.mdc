@@ -1,0 +1,2101 @@
+---
+description: Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Projekte mit Webserver (FastAPI). Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration.
+alwaysApply: false
+---
+# Standard-Projektvorlage für Python-Anwendungen
+
+Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Projekte mit Webserver (FastAPI). Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration.
+
+## 📁 Standard-Ordnerstruktur
+
+```
+projekt-name/
+├── main.py                          # Hauptanwendung (FastAPI/Flask Entry Point)
+├── config.py                        # Zentrale Konfiguration und Umgebungsvariablen
+├── requirements.txt                 # Python-Dependencies
+├── .env.example                     # Beispiel-Umgebungsvariablen
+├── docker-compose.yml               # Container-Orchestrierung
+├── Dockerfile                       # Container-Definition
+├── pytest.ini                      # Test-Konfiguration
+├── .gitignore                       # Git-Ausschlüsse
+├── README.md                        # Projekt-Dokumentation
+├── core/                            # Kernlogik der Anwendung
+│   ├── __init__.py
+│   ├── orchestrator.py              # Hauptworkflow-Orchestrierung
+│   └── manager.py                   # Zentrale Manager-Klassen
+├── services/                        # Service-Layer (API-Integrationen)
+│   ├── __init__.py
+│   ├── database_service.py          # Datenbankzugriff
+│   ├── external_api_service.py      # Externe API-Integrationen
+│   └── file_service.py              # Dateiverwaltung
+├── models/                          # Datenmodelle (Pydantic/SQLAlchemy)
+│   ├── __init__.py
+│   ├── base_models.py               # Basis-Modelle
+│   └── domain_models.py             # Domain-spezifische Modelle
+├── utils/                           # Hilfsfunktionen und gemeinsame Tools
+│   ├── __init__.py
+│   ├── logger.py                    # Logging-Konfiguration
+│   ├── retry.py                     # Retry-Mechanismen
+│   ├── encryption.py                # Verschlüsselung (falls benötigt)
+│   └── validators.py                # Datenvalidierung
+├── api/                             # API-Endpoints (bei REST APIs)
+│   ├── __init__.py
+│   └── endpoints.py                 # Route-Definitionen
+├── tests/                           # Test-Suite
+│   ├── __init__.py
+│   ├── test_core/                   # Tests für core/
+│   ├── test_services/               # Tests für services/
+│   ├── test_models/                 # Tests für models/
+│   ├── test_utils/                  # Tests für utils/
+│   ├── test_api/                    # Tests für api/
+│   └── test_integration/            # Integrationstests
+└── docs/                            # Projektdokumentation
+    ├── CHANGELOG.md                 # Änderungsprotokoll
+    ├── API.md                       # API-Dokumentation
+    └── DEPLOYMENT.md                # Deployment-Anleitung
+```
+
+## 🏷️ Namenskonventionen
+
+### Dateien und Ordner
+- **Snake_case**: `user_service.py`, `order_models.py`
+- **Aussagekräftige Namen**: `authentication_manager.py` statt `auth.py`
+- **Singular für Module**: `user_model.py` nicht `users_models.py`
+- **Plural für Collections**: `models/`, `services/`, `tests/`
+
+### Python-Code
+```python
+# Klassen: PascalCase
+class UserAuthenticationManager:
+    pass
+
+# Funktionen/Variablen: snake_case
+def process_user_data():
+    user_email = "test@example.com"
+
+# Konstanten: UPPER_SNAKE_CASE
+DATABASE_CONNECTION_TIMEOUT = 30
+API_BASE_URL = "https://api.example.com"
+
+# Private Methoden: _leading_underscore
+def _validate_internal_data():
+    pass
+```
+
+### Environment Variables
+```bash
+# Format: PROJEKT_KATEGORIE_VARIABLE
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+MYAPP_API_KEY=secret-key
+MYAPP_LOG_LEVEL=INFO
+```
+
+## ⚙️ Standardeinstellungen
+
+### Port-Konventionen
+```python
+# config.py - Standard Port für alle Environments
+DEFAULT_PORT = 8080  # Standard Port für FastAPI-Anwendungen
+```
+
+### Host-Konfiguration
+```python
+# config.py - FastAPI Host-Konfiguration
+FASTAPI_HOST = "0.0.0.0"  # FastAPI lauscht auf allen Interfaces im Container
+
+# docker-compose.yml - Container Port Mapping
+"""
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"  # Nur über localhost erreichbar
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+"""
+```
+
+**Sicherheitskonzept:**
+- **FastAPI Host `0.0.0.0`**: Service lauscht auf allen Interfaces im Container
+- **Docker-Compose Host `127.0.0.1`**: Container nur über localhost erreichbar
+- **Container-Firewall**: Schutz durch Docker-Netzwerk-Isolation
+
+### Debug/Log Levels
+```python
+# .env - Environment Variable (Standard: DEBUG für Development)
+LOG_LEVEL=DEBUG
+
+# config.py - Environment-Variable Handling
+import os
+from utils.logger import get_logger
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+
+# utils/logger.py - Logger-Konfiguration
+import logging
+import os
+
+def get_logger(name: str):
+    log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.DEBUG),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    return logging.getLogger(name)
+```
+
+### Standard .env.example
+```bash
+# Standard Environment Configuration
+PORT=8080
+HOST=0.0.0.0
+LOG_LEVEL=DEBUG
+
+# Application specific variables
+MYAPP_API_KEY=your-api-key-here
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+```
+
+## 📏 Datei-Teilungskriterien
+
+### Wann Dateien aufteilen?
+
+#### **Größenkriterien:**
+- **< 200 Zeilen**: Optimal, keine Teilung nötig
+- **200-500 Zeilen**: Überprüfen auf logische Trennung
+- **> 500 Zeilen**: **Zwingend aufteilen**
+
+#### **Komplexitätskriterien:**
+```python
+# SCHLECHT: Alles in einer Datei
+class UserService:
+    def authenticate(self): pass
+    def create_user(self): pass  
+    def send_email(self): pass
+    def generate_pdf(self): pass
+    def process_payment(self): pass
+
+# GUT: Logische Trennung
+# services/user_service.py
+class UserService:
+    def authenticate(self): pass
+    def create_user(self): pass
+
+# services/email_service.py  
+class EmailService:
+    def send_welcome_email(self): pass
+
+# services/payment_service.py
+class PaymentService:
+    def process_payment(self): pass
+```
+
+#### **Teilungsindikatoren:**
+- **Mehr als 5 Klassen** pro Datei
+- **Mehr als 10 Funktionen** pro Klasse
+- **Import-Liste > 15 Zeilen**
+- **Verschiedene Domains** in einer Datei (User + Payment + Email)
+
+## 🏗️ Anwendungs-Layer-Architektur
+
+### Layer 1: **API Layer** (`main.py`, `api/`)
+```python
+# main.py - FastAPI Entry Point
+@app.post("/process-webhook")
+async def handle_webhook(payload: WebhookPayload):
+    result = await workflow_orchestrator.process(payload)
+    return {"status": "success", "workflow_id": result.id}
+```
+
+**Verantwortlichkeiten:**
+- HTTP-Request/Response-Handling
+- Input-Validierung (Pydantic)
+- Authentication/Authorization
+- Error-Response-Formatting
+
+### Layer 2: **Core Business Logic** (`core/`)
+```python
+# core/workflow_orchestrator.py
+class WorkflowOrchestrator:
+    def __init__(self, user_service, email_service, pdf_service):
+        self.user_service = user_service
+        self.email_service = email_service  
+        self.pdf_service = pdf_service
+        
+    async def process(self, payload: WebhookPayload):
+        # Orchestriert Business Logic
+        user = await self.user_service.find_user(payload.email)
+        pdf = await self.pdf_service.generate(payload.data)
+        await self.email_service.send(user.email, pdf)
+```
+
+**Verantwortlichkeiten:**
+- Business-Workflow-Orchestrierung
+- Domain-Logic-Koordination
+- State-Management
+- Business-Rules-Validation
+
+### Layer 3: **Service Layer** (`services/`)
+```python
+# services/user_service.py
+class UserService:
+    def __init__(self, database_service):
+        self.db = database_service
+        
+    async def find_user(self, email: str) -> User:
+        # Abstraktion für User-Operations
+        return await self.db.get_user_by_email(email)
+```
+
+**Verantwortlichkeiten:**
+- Abstraktion externer APIs/Datenbanken
+- Datentransformation
+- Error-Handling für externe Calls
+- Retry-Logic
+
+### Layer 4: **Data/Infrastructure Layer** (`models/`, `utils/`)
+```python
+# models/user_models.py
+class User(BaseModel):
+    id: str
+    email: EmailStr
+    created_at: datetime
+
+# utils/database.py
+class DatabaseConnection:
+    async def get_user_by_email(self, email: str):
+        # Low-level Datenbankzugriff
+```
+
+**Verantwortlichkeiten:**
+- Datenmodell-Definitionen
+- Datenbankzugriff
+- Externe API-Clients
+- Utility-Funktionen
+
+## 🔄 Layer-Kommunikation
+
+### **Erlaubte Abhängigkeiten:**
+```
+API Layer → Core Layer → Service Layer → Data Layer
+     ↓           ↓            ↓             ↓
+   utils/     utils/      utils/        utils/
+```
+
+### **Verbotene Abhängigkeiten:**
+```
+❌ Service Layer → Core Layer
+❌ Data Layer → Service Layer  
+❌ Circular Dependencies zwischen Services
+```
+
+## 📋 Checkliste für neue Projekte
+
+### **Projekt-Setup:**
+- [ ] Ordnerstruktur nach Vorlage erstellt
+- [ ] `requirements.txt` mit Base-Dependencies
+- [ ] `.env.example` mit allen benötigten Variablen
+- [ ] `config.py` mit Environment-Handling
+- [ ] Docker-Setup (Dockerfile + docker-compose.yml)
+- [ ] `.gitignore` für Python-Projekte
+
+### **Code-Qualität:**
+- [ ] `pytest.ini` konfiguriert
+- [ ] Logger in `utils/logger.py` eingerichtet
+- [ ] Base-Models in `models/` definiert
+- [ ] Retry-Mechanismus in `utils/retry.py`
+- [ ] Error-Handling-Standards definiert
+
+### **Security (falls benötigt):**
+- [ ] Encryption-Utils in `utils/encryption.py`
+- [ ] Environment-Variable-Validation
+- [ ] API-Key-Rotation-Mechanismus
+- [ ] GDPR-Compliance-Prüfung
+
+### **Documentation:**
+- [ ] README.md mit Projekt-Übersicht
+- [ ] API-Dokumentation in `docs/API.md`
+- [ ] Deployment-Anleitung in `docs/DEPLOYMENT.md`
+- [ ] CHANGELOG.md für Versionierung
+
+## 🎯 Beispiel-Implementation
+
+### Minimales FastAPI-Projekt:
+```python
+# main.py
+import os
+from fastapi import FastAPI
+from core.orchestrator import BusinessOrchestrator
+from services.database_service import DatabaseService
+from utils.logger import get_logger
+
+app = FastAPI()
+logger = get_logger(__name__)
+
+@app.post("/api/process")
+async def process_data(payload: dict):
+    orchestrator = BusinessOrchestrator(DatabaseService())
+    result = await orchestrator.process(payload)
+    return {"success": True, "data": result}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    uvicorn.run(app, host=host, port=port)
+```
+
+### Standard docker-compose.yml:
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"  # Nur über localhost erreichbar
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - LOG_LEVEL=DEBUG
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+```
+
+## 📦 Dependency Management
+
+### Requirements.txt Standards
+```txt
+# requirements.txt - Pinned Versions für Production
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+requests==2.31.0
+
+# Development Dependencies in separate file
+# requirements-dev.txt
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+```
+
+### Versionierung-Strategie
+- **Production**: Exakte Versionen (`==0.104.1`)
+- **Development**: Compatible Versionen (`>=0.104.0,<0.105.0`)
+- **Security Updates**: Regelmäßige Updates alle 4 Wochen
+
+## 🧪 Testing Standards
+
+### Test-Struktur & Patterns
+```python
+# tests/test_services/test_user_service.py
+import pytest
+from unittest.mock import Mock, patch
+from services.user_service import UserService
+
+class TestUserService:
+    @pytest.fixture
+    def user_service(self):
+        mock_db = Mock()
+        return UserService(mock_db)
+    
+    @pytest.mark.asyncio
+    async def test_find_user_success(self, user_service):
+        # Arrange
+        expected_user = {"id": "123", "email": "test@example.com"}
+        user_service.db.get_user_by_email.return_value = expected_user
+        
+        # Act
+        result = await user_service.find_user("test@example.com")
+        
+        # Assert
+        assert result == expected_user
+        user_service.db.get_user_by_email.assert_called_once_with("test@example.com")
+```
+
+### pytest.ini Konfiguration
+```ini
+[tool:pytest]
+testpaths = tests/
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = 
+    --verbose
+    --tb=short
+    --cov=.
+    --cov-report=html
+    --cov-report=term-missing
+    --cov-fail-under=80
+```
+
+### Test-Kategorien
+- **Unit Tests**: Einzelne Funktionen/Klassen (`tests/test_services/`)
+- **Integration Tests**: Service-Kombinationen (`tests/test_integration/`)
+- **End-to-End Tests**: Komplette Workflows (`tests/test_e2e/`)
+
+
+## 🛡️ Error Handling Patterns
+
+### Layer-spezifische Error-Behandlung
+
+#### **Layer 1: API Layer (`main.py`, `api/`)**
+**Verantwortlichkeiten:**
+- **Input-Validierung**: Pydantic macht das automatisch
+- **HTTP-Response-Formatierung**: FastAPI macht das automatisch  
+- **Error-Logging**: Bei unerwarteten Fehlern loggen
+- **Security**: Keine internen Details preisgeben
+
+```python
+# main.py - API Layer Error Handling (Einfach)
+@app.post("/api/process")
+async def process_data(payload: ProcessRequest):
+    try:
+        # Pydantic validiert automatisch das Request-Model
+        result = await workflow_orchestrator.process(payload)
+        return {"success": True, "data": result}
+    except ValidationError as e:
+        # Business validation errors
+        logger.warning(f"Validation failed: {e.error_code}")
+        raise HTTPException(status_code=422, detail=e.message)
+    except ExternalAPIError as e:
+        # External service errors  
+        logger.error(f"External service failed: {e.error_code}")
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+    except Exception as e:
+        # Unexpected errors
+        logger.exception("Unexpected error occurred")
+        raise HTTPException(status_code=500, detail="Internal server error")
+```
+
+#### **Layer 2: Core Business Logic (`core/`)**
+**Verantwortlichkeiten:**
+- **Business Rule Violations**: Domain-spezifische Errors
+- **Workflow-Koordination**: Service-Errors weiterleiten oder transformieren
+- **State-Validation**: Workflow-Zustand validieren
+- **Compensation**: Rollback-Logik bei Fehlern
+
+```python
+# core/workflow_orchestrator.py - Core Layer Error Handling
+class WorkflowOrchestrator:
+    async def process(self, payload):
+        try:
+            user = await self.user_service.find_user(payload.email)
+            result = await self.process_business_logic(user, payload)
+            return result
+        except ExternalAPIError as e:
+            logger.error(f"External service failed: {e.error_code}", extra={"user_id": user.id if user else None})
+            # Compensation logic
+            await self.cleanup_partial_state()
+            raise BusinessLogicError("Workflow processing failed", error_code="WORKFLOW_001")
+        except ValidationError:
+            # Re-raise validation errors to API layer
+            raise
+```
+
+#### **Layer 3: Service Layer (`services/`)**
+**Verantwortlichkeiten:**
+- **External API Errors**: HTTP-Codes zu App-Exceptions konvertieren
+- **Retry-Logic**: Transiente Fehler automatisch wiederholen
+- **Circuit Breaker**: Überlastete Services abschalten
+- **Data Transformation**: Format-Fehler behandeln
+
+```python
+# services/external_service.py - Service Layer Error Handling
+class ExternalAPIService:
+    async def call_api(self, endpoint: str, data: dict):
+        try:
+            response = await self.http_client.post(endpoint, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code >= 500:
+                logger.error(f"External API server error: {e.response.status_code}")
+                raise ExternalAPIError("External service unavailable", error_code="EXT_API_001")
+            elif e.response.status_code == 404:
+                logger.warning(f"Resource not found: {endpoint}")
+                raise ValidationError("Resource not found", error_code="NOT_FOUND_001")
+            else:
+                logger.error(f"External API client error: {e.response.status_code}")
+                raise ExternalAPIError("External API error", error_code="EXT_API_002")
+        except httpx.RequestError as e:
+            logger.error(f"Network error calling external API: {str(e)}")
+            raise ExternalAPIError("Network connection failed", error_code="NETWORK_001")
+```
+
+#### **Layer 4: Data/Infrastructure Layer (`models/`, `utils/`)**
+**Verantwortlichkeiten:**
+- **Database Errors**: Connection, Query, Constraint Violations
+- **File System Errors**: Disk Full, Permissions
+- **Network Errors**: Timeouts, DNS Resolution
+- **Resource Cleanup**: Connections, Files, Locks freigeben
+
+```python
+# utils/database.py - Data Layer Error Handling
+class DatabaseService:
+    async def get_user_by_email(self, email: str):
+        try:
+            result = await self.connection.fetchrow("SELECT * FROM users WHERE email = $1", email)
+            if not result:
+                raise ValidationError(f"User not found", error_code="USER_NOT_FOUND")
+            return result
+        except asyncpg.PostgresError as e:
+            logger.error(f"Database query failed: {e.sqlstate}")
+            raise DatabaseError("Database operation failed", error_code="DB_QUERY_001")
+        except asyncpg.ConnectionError as e:
+            logger.critical(f"Database connection lost: {str(e)}")
+            raise DatabaseError("Database connection failed", error_code="DB_CONN_001")
+```
+
+### Standard Exception-Hierarchie
+```python
+# utils/exceptions.py
+class BaseAppException(Exception):
+    """Basis-Exception für alle App-spezifischen Errors"""
+    def __init__(self, message: str, error_code: str = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+
+class ValidationError(BaseAppException):
+    """Datenvalidierung fehlgeschlagen - 4xx Client Error"""
+    pass
+
+class BusinessLogicError(BaseAppException):
+    """Business Rules verletzt - 4xx Client Error"""
+    pass
+
+class ExternalAPIError(BaseAppException):
+    """Externe API-Aufrufe fehlgeschlagen - 5xx Server Error"""
+    pass
+
+class DatabaseError(BaseAppException):
+    """Datenbankoperationen fehlgeschlagen - 5xx Server Error"""
+    pass
+
+class SystemError(BaseAppException):
+    """System-Level Fehler - 5xx Server Error"""
+    pass
+```
+
+### Error-Handling-Regeln
+
+#### **Do's:**
+- **Fail Fast**: Fehler so früh wie möglich erkennen und behandeln
+- **Error Codes**: Eindeutige Error-Codes für alle Exception-Types
+- **Layer-Appropriate**: Jeder Layer behandelt nur seine spezifischen Errors
+- **Logging**: Alle Errors mit Context-Informationen loggen
+- **User-Friendly**: API-Responses ohne interne Details
+- **Compensation**: Bei Partial-Failures State aufräumen
+
+#### **Don'ts:**
+- **Silent Failures**: Niemals Exceptions ignorieren oder verschlucken
+- **Generic Exceptions**: Keine generischen `Exception` oder `RuntimeError`
+- **Information Leakage**: Keine Stack Traces oder DB-Details in API-Responses
+- **Cross-Layer**: Service Layer soll nicht Core Layer Exceptions werfen
+- **PII in Logs**: Keine personenbezogenen Daten in Error-Messages
+
+
+## 🔍 Health & Monitoring
+
+### Health Check Endpoints
+```python
+# api/health_endpoints.py
+from fastapi import APIRouter
+from datetime import datetime
+import psutil
+
+router = APIRouter(prefix="/health")
+
+@router.get("/")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0"
+    }
+
+@router.get("/detailed")
+async def detailed_health():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage('/').percent
+        }
+    }
+```
+
+### Logging Standards
+
+#### **Was wird geloggt?**
+
+**✅ Erlaubte Log-Inhalte:**
+- **System-IDs**: User-IDs, Request-IDs, Session-IDs, Transaction-IDs
+- **Performance-Metriken**: Response-Times, DB-Query-Times, API-Call-Duration
+- **Technical Details**: HTTP-Status-Codes, Error-Codes, Service-Names
+- **Business-Events**: "User login successful", "Payment processed", "Email sent"
+- **System-Status**: "Database connection established", "Cache cleared"
+
+**❌ Verbotene Log-Inhalte (GDPR/Privacy):**
+- **Personenbezogene Daten**: Namen, E-Mail-Adressen, Telefonnummern
+- **Sensitive Data**: Passwörter, API-Keys, Kreditkartennummern
+- **User Content**: Chat-Messages, Documents, Personal Files
+- **Location Data**: IP-Adressen, GPS-Koordinaten
+- **Financial Data**: Account-Numbers, Transaction-Details
+
+#### **Wann wird geloggt?**
+
+**Layer-spezifische Logging-Regeln:**
+
+**API Layer:**
+- **INFO**: Successful requests `"API request completed: POST /api/users"`
+- **WARNING**: Client errors (4xx) `"Validation failed for user creation"`
+- **ERROR**: Server errors (5xx) `"Internal server error occurred"`
+
+**Core Layer:**
+- **INFO**: Business workflows `"User registration workflow started"`
+- **WARNING**: Business rule violations `"Insufficient permissions for action"`
+- **ERROR**: Workflow failures `"Payment processing failed"`
+
+**Service Layer:**
+- **DEBUG**: External API calls `"Calling external service: user-service"`
+- **INFO**: Successful operations `"User data retrieved from external API"`
+- **WARNING**: Retry attempts `"External API call failed, retrying (attempt 2/3)"`
+- **ERROR**: Service failures `"External API unavailable after 3 retries"`
+
+**Data Layer:**
+- **DEBUG**: Database queries `"Executing query: SELECT user_id FROM users"`
+- **INFO**: Data operations `"User record created successfully"`
+- **WARNING**: Performance issues `"Database query took 2.5s (threshold: 1s)"`
+- **CRITICAL**: System failures `"Database connection pool exhausted"`
+
+
+#### **Log-Level-Guidelines:**
+- **DEBUG**: Development-Details, nur in Development-Environment
+- **INFO**: Normal Operations, Business-Events
+- **WARNING**: Potential Issues, Retries, Degraded Performance
+- **ERROR**: Failed Operations, Recoverable Errors
+- **CRITICAL**: System Failures, Security Issues, Data Loss
+
+## 📋 Git Workflow Standards
+
+### Branch-Strategie (Simplified)
+```
+main            # Production-ready Code (deployed to production)
+testing         # Development Branch (all development happens here)
+```
+
+### Branch-Management-Regeln
+
+#### **Main Branch:**
+- **Zweck**: Production-ready Code, always deployable
+- **Protection**: Direct pushes blocked, nur via Pull Request von `testing`
+- **Deployment**: Automatisch zu Production-Environment
+- **Testing**: Vollständige Test-Suite muss passieren
+- **Code Review**: Mindestens 1 Reviewer erforderlich
+
+#### **Testing Branch:**
+- **Zweck**: Alle Development-Arbeit (Features, Bugfixes, Experimente)
+- **Development**: Direktes Arbeiten auf diesem Branch
+- **Deployment**: Automatisch zu Staging/Testing-Environment
+- **Testing**: Kontinuierliche Tests während Development
+- **Merge zu Main**: Nur nach erfolgreicher Validation und Testing
+
+### Workflow-Prozess
+1. **Development**: Alle Änderungen auf `testing` Branch
+2. **Testing**: Validierung im Staging-Environment
+3. **Pull Request**: Von `testing` zu `main` nach erfolgreichen Tests
+4. **Production**: Deployment nach Merge zu `main`
+
+### Commit Message Konventionen
+```
+# Format: <type>(<scope>): <description>
+
+feat(auth): add JWT token authentication
+fix(api): resolve user validation error
+docs(readme): update installation instructions
+test(user): add unit tests for user service
+refactor(db): optimize database connection handling
+```
+
+## 📚 Documentation Standards
+
+### Docstring Konventionen
+```python
+def process_user_data(user_id: str, data: dict) -> dict:
+    """
+    Verarbeitet Benutzerdaten und führt Validierung durch.
+    
+    Args:
+        user_id (str): Eindeutige Benutzer-ID
+        data (dict): Zu verarbeitende Benutzerdaten
+        
+    Returns:
+        dict: Verarbeitete und validierte Daten
+        
+    Raises:
+        ValidationError: Wenn Datenvalidierung fehlschlägt
+        DatabaseError: Wenn Datenbankzugriff fehlschlägt
+        
+    Example:
+        >>> result = process_user_data("123", {"name": "John"})
+        >>> print(result["validated"])
+        True
+    """
+```
+
+### README.md Template
+```markdown
+# Projekt-Name
+
+Kurze Beschreibung des Projekts.
+
+## 🚀 Quick Start
+
+\`\`\`bash
+# Installation
+pip install -r requirements.txt
+
+# Konfiguration
+cp .env.example .env
+
+# Start
+python main.py
+\`\`\`
+
+## 📋 API Dokumentation
+
+- Health Check: `GET /health`
+- API Docs: `GET /docs` (Swagger UI)
+
+## 🧪 Testing
+
+\`\`\`bash
+pytest tests/ --cov=.
+\`\`\`
+
+## 🚢 Deployment
+
+\`\`\`bash
+docker-compose up -d
+\`\`\`
+```
+
+## 🔒 Security Guidelines
+
+### Environment Security
+```python
+# config.py - Sichere Konfiguration
+import os
+from typing import Optional
+
+def get_required_env(key: str) -> str:
+    """Sichere Umgebungsvariable mit Fehlermeldung"""
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Required environment variable {key} not set")
+    return value
+
+def get_optional_env(key: str, default: str = "") -> str:
+    """Optionale Umgebungsvariable mit Fallback"""
+    return os.getenv(key, default)
+
+# Verwendung
+DATABASE_URL = get_required_env("DATABASE_URL")
+DEBUG_MODE = get_optional_env("DEBUG", "false").lower() == "true"
+```
+
+## 📊 Pydantic Datamodels
+
+### Warum Pydantic?
+
+**Pydantic** ist die Standard-Bibliothek für Datenvalidierung und -serialisierung in modernen Python-Anwendungen. Sie gewährleistet Typsicherheit, automatische Validierung und klare API-Contracts.
+
+### Wann Pydantic verwenden?
+
+#### **✅ Immer verwenden für:**
+
+**1. API Request/Response Models**
+```python
+# API Input Validation
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    name: str = Field(..., min_length=2, max_length=100)
+    age: int = Field(..., ge=0, le=150)
+    
+# API Response Models  
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+    name: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True  # Für SQLAlchemy ORM-Kompatibilität
+```
+
+**2. Service Layer Contracts**
+```python
+# Input für Business Logic
+class ProcessPaymentInput(BaseModel):
+    user_id: str
+    amount: Decimal = Field(..., gt=0)
+    currency: str = Field(..., regex="^[A-Z]{3}$")
+    payment_method: PaymentMethod
+    
+# Output für Service Responses
+class PaymentResult(BaseModel):
+    transaction_id: str
+    status: PaymentStatus
+    processed_at: datetime
+    fees: Optional[Decimal] = None
+```
+
+**3. Configuration Models**
+```python
+# Typsichere Konfiguration
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str
+    username: str
+    password: SecretStr
+    ssl_mode: str = "require"
+    
+    @validator('host')
+    def validate_host(cls, v):
+        if not v or v.isspace():
+            raise ValueError('Host cannot be empty')
+        return v
+```
+
+**4. External API Models**
+```python
+# Zoom API Response Model
+class ZoomMeetingResponse(BaseModel):
+    id: str
+    topic: str
+    start_time: datetime
+    duration: int
+    participants: List[ZoomParticipant]
+    
+    class Config:
+        # Flexible für externe APIs
+        extra = "ignore"  # Unbekannte Felder ignorieren
+```
+
+#### **❌ Nicht verwenden für:**
+
+**1. Interne Data Classes (verwende dataclasses)**
+```python
+# Einfache interne Datenstrukturen
+from dataclasses import dataclass
+
+@dataclass
+class CacheEntry:
+    key: str
+    value: Any
+    expires_at: datetime
+```
+
+**2. ORM Models (verwende SQLAlchemy direkt)**
+```python
+# Database Models bleiben als SQLAlchemy
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+```
+
+**3. Utility Functions (verwende normale Type Hints)**
+```python
+# Normale Funktionen mit Type Hints
+def calculate_total(items: List[float], tax_rate: float = 0.19) -> float:
+    return sum(items) * (1 + tax_rate)
+```
+
+### Layer-spezifische Pydantic-Nutzung
+
+#### **API Layer (`main.py`, `api/`)**
+```python
+# Request/Response Models für FastAPI
+@app.post("/users", response_model=UserResponse)
+async def create_user(user_data: CreateUserRequest):
+    # Automatische Validierung durch Pydantic
+    result = await user_service.create_user(user_data)
+    return UserResponse.from_orm(result)
+```
+
+#### **Core Layer (`core/`)**
+```python
+# Business Logic Input/Output
+class WorkflowInput(BaseModel):
+    user_id: str
+    payload: Dict[str, Any]
+    priority: WorkflowPriority = WorkflowPriority.NORMAL
+    
+class WorkflowResult(BaseModel):
+    workflow_id: str
+    status: WorkflowStatus
+    created_at: datetime
+    estimated_completion: Optional[datetime] = None
+```
+
+#### **Service Layer (`services/`)**
+```python
+# Service Contracts
+class ExternalAPIRequest(BaseModel):
+    endpoint: HttpUrl
+    method: str = "GET"
+    headers: Dict[str, str] = Field(default_factory=dict)
+    data: Optional[Dict[str, Any]] = None
+    timeout: int = Field(default=30, ge=1, le=300)
+```
+
+### Pydantic Best Practices
+
+#### **1. Field Validation**
+```python
+class UserModel(BaseModel):
+    email: EmailStr  # Automatische E-Mail-Validierung
+    age: int = Field(..., ge=0, le=150, description="User age in years")
+    username: str = Field(..., regex="^[a-zA-Z0-9_]+$", min_length=3)
+    
+    @validator('username')
+    def username_alphanumeric(cls, v):
+        if not v.replace('_', '').isalnum():
+            raise ValueError('Username must be alphanumeric')
+        return v
+```
+
+#### **2. Custom Validators**
+```python
+class PaymentModel(BaseModel):
+    amount: Decimal
+    currency: str
+    
+    @validator('amount')
+    def amount_precision(cls, v):
+        if v.as_tuple().exponent < -2:
+            raise ValueError('Amount cannot have more than 2 decimal places')
+        return v
+    
+    @root_validator
+    def validate_currency_amount(cls, values):
+        amount, currency = values.get('amount'), values.get('currency')
+        if currency == 'JPY' and amount % 1 != 0:
+            raise ValueError('JPY amounts must be whole numbers')
+        return values
+```
+
+#### **3. Serialization Aliases**
+```python
+class ExternalAPIModel(BaseModel):
+    user_id: str = Field(alias="userId")
+    created_at: datetime = Field(alias="createdAt")
+    
+    class Config:
+        allow_population_by_field_name = True  # Akzeptiert beide Namen
+```
+
+#### **4. Model Inheritance**
+```python
+class BaseTimestampModel(BaseModel):
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+class UserModel(BaseTimestampModel):
+    id: str
+    email: EmailStr
+    name: str
+    # created_at und updated_at werden automatisch vererbt
+```
+
+### Integration mit FastAPI
+
+```python
+# FastAPI automatische Dokumentation
+@app.post("/process-workflow", response_model=WorkflowResult)
+async def process_workflow(
+    request: WorkflowInput,  # Automatische Request-Validierung
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Prozessiert einen Workflow mit automatischer:
+    - Request-Validierung (Pydantic)
+    - Response-Serialisierung (Pydantic)  
+    - OpenAPI-Dokumentation (FastAPI + Pydantic)
+    - Type Safety (mypy + Pydantic)
+    """
+    result = await workflow_orchestrator.process(request)
+    return WorkflowResult(**result.dict())
+```
+
+**Vorteile dieser Pydantic-Strategie:**
+- **Typsicherheit**: Compile-time und Runtime-Validierung
+- **Automatische Dokumentation**: OpenAPI/Swagger aus Models
+- **Einheitliche Contracts**: Klare API-Contracts zwischen Layern
+- **Fehlerbehandlung**: Automatische Validierungsfehler mit Details
+- **IDE-Support**: Autocomplete und Type-Checking
+
+Diese Vorlage gewährleistet konsistente, skalierbare und wartbare Python-Projekte für Teams jeder Größe.# Standard-Projektvorlage für Python-Anwendungen
+
+Diese Vorlage definiert die empfohlene Struktur und Konventionen für neue Python-Projekte mit Webserver (FastAPI). Sie basiert auf bewährten Praktiken aus produktiven Systemen und gewährleistet Skalierbarkeit, Wartbarkeit und Teamkollaboration.
+
+## 📁 Standard-Ordnerstruktur
+
+```
+projekt-name/
+├── main.py                          # Hauptanwendung (FastAPI/Flask Entry Point)
+├── config.py                        # Zentrale Konfiguration und Umgebungsvariablen
+├── requirements.txt                 # Python-Dependencies
+├── .env.example                     # Beispiel-Umgebungsvariablen
+├── docker-compose.yml               # Container-Orchestrierung
+├── Dockerfile                       # Container-Definition
+├── pytest.ini                      # Test-Konfiguration
+├── .gitignore                       # Git-Ausschlüsse
+├── README.md                        # Projekt-Dokumentation
+├── core/                            # Kernlogik der Anwendung
+│   ├── __init__.py
+│   ├── orchestrator.py              # Hauptworkflow-Orchestrierung
+│   └── manager.py                   # Zentrale Manager-Klassen
+├── services/                        # Service-Layer (API-Integrationen)
+│   ├── __init__.py
+│   ├── database_service.py          # Datenbankzugriff
+│   ├── external_api_service.py      # Externe API-Integrationen
+│   └── file_service.py              # Dateiverwaltung
+├── models/                          # Datenmodelle (Pydantic/SQLAlchemy)
+│   ├── __init__.py
+│   ├── base_models.py               # Basis-Modelle
+│   └── domain_models.py             # Domain-spezifische Modelle
+├── utils/                           # Hilfsfunktionen und gemeinsame Tools
+│   ├── __init__.py
+│   ├── logger.py                    # Logging-Konfiguration
+│   ├── retry.py                     # Retry-Mechanismen
+│   ├── encryption.py                # Verschlüsselung (falls benötigt)
+│   └── validators.py                # Datenvalidierung
+├── api/                             # API-Endpoints (bei REST APIs)
+│   ├── __init__.py
+│   └── endpoints.py                 # Route-Definitionen
+├── tests/                           # Test-Suite
+│   ├── __init__.py
+│   ├── test_core/                   # Tests für core/
+│   ├── test_services/               # Tests für services/
+│   ├── test_models/                 # Tests für models/
+│   ├── test_utils/                  # Tests für utils/
+│   ├── test_api/                    # Tests für api/
+│   └── test_integration/            # Integrationstests
+└── docs/                            # Projektdokumentation
+    ├── CHANGELOG.md                 # Änderungsprotokoll
+    ├── API.md                       # API-Dokumentation
+    └── DEPLOYMENT.md                # Deployment-Anleitung
+```
+
+## 🏷️ Namenskonventionen
+
+### Dateien und Ordner
+- **Snake_case**: `user_service.py`, `order_models.py`
+- **Aussagekräftige Namen**: `authentication_manager.py` statt `auth.py`
+- **Singular für Module**: `user_model.py` nicht `users_models.py`
+- **Plural für Collections**: `models/`, `services/`, `tests/`
+
+### Python-Code
+```python
+# Klassen: PascalCase
+class UserAuthenticationManager:
+    pass
+
+# Funktionen/Variablen: snake_case
+def process_user_data():
+    user_email = "test@example.com"
+
+# Konstanten: UPPER_SNAKE_CASE
+DATABASE_CONNECTION_TIMEOUT = 30
+API_BASE_URL = "https://api.example.com"
+
+# Private Methoden: _leading_underscore
+def _validate_internal_data():
+    pass
+```
+
+### Environment Variables
+```bash
+# Format: PROJEKT_KATEGORIE_VARIABLE
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+MYAPP_API_KEY=secret-key
+MYAPP_LOG_LEVEL=INFO
+```
+
+## ⚙️ Standardeinstellungen
+
+### Port-Konventionen
+```python
+# config.py - Standard Port für alle Environments
+DEFAULT_PORT = 8080  # Standard Port für FastAPI-Anwendungen
+```
+
+### Host-Konfiguration
+```python
+# config.py - FastAPI Host-Konfiguration
+FASTAPI_HOST = "0.0.0.0"  # FastAPI lauscht auf allen Interfaces im Container
+
+# docker-compose.yml - Container Port Mapping
+"""
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"  # Nur über localhost erreichbar
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+"""
+```
+
+**Sicherheitskonzept:**
+- **FastAPI Host `0.0.0.0`**: Service lauscht auf allen Interfaces im Container
+- **Docker-Compose Host `127.0.0.1`**: Container nur über localhost erreichbar
+- **Container-Firewall**: Schutz durch Docker-Netzwerk-Isolation
+
+### Debug/Log Levels
+```python
+# .env - Environment Variable (Standard: DEBUG für Development)
+LOG_LEVEL=DEBUG
+
+# config.py - Environment-Variable Handling
+import os
+from utils.logger import get_logger
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+
+# utils/logger.py - Logger-Konfiguration
+import logging
+import os
+
+def get_logger(name: str):
+    log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.DEBUG),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    return logging.getLogger(name)
+```
+
+### Standard .env.example
+```bash
+# Standard Environment Configuration
+PORT=8080
+HOST=0.0.0.0
+LOG_LEVEL=DEBUG
+
+# Application specific variables
+MYAPP_API_KEY=your-api-key-here
+MYAPP_DATABASE_URL=postgresql://localhost:5432/myapp
+```
+
+## 📏 Datei-Teilungskriterien
+
+### Wann Dateien aufteilen?
+
+#### **Größenkriterien:**
+- **< 200 Zeilen**: Optimal, keine Teilung nötig
+- **200-500 Zeilen**: Überprüfen auf logische Trennung
+- **> 500 Zeilen**: **Zwingend aufteilen**
+
+#### **Komplexitätskriterien:**
+```python
+# SCHLECHT: Alles in einer Datei
+class UserService:
+    def authenticate(self): pass
+    def create_user(self): pass  
+    def send_email(self): pass
+    def generate_pdf(self): pass
+    def process_payment(self): pass
+
+# GUT: Logische Trennung
+# services/user_service.py
+class UserService:
+    def authenticate(self): pass
+    def create_user(self): pass
+
+# services/email_service.py  
+class EmailService:
+    def send_welcome_email(self): pass
+
+# services/payment_service.py
+class PaymentService:
+    def process_payment(self): pass
+```
+
+#### **Teilungsindikatoren:**
+- **Mehr als 5 Klassen** pro Datei
+- **Mehr als 10 Funktionen** pro Klasse
+- **Import-Liste > 15 Zeilen**
+- **Verschiedene Domains** in einer Datei (User + Payment + Email)
+
+## 🏗️ Anwendungs-Layer-Architektur
+
+### Layer 1: **API Layer** (`main.py`, `api/`)
+```python
+# main.py - FastAPI Entry Point
+@app.post("/process-webhook")
+async def handle_webhook(payload: WebhookPayload):
+    result = await workflow_orchestrator.process(payload)
+    return {"status": "success", "workflow_id": result.id}
+```
+
+**Verantwortlichkeiten:**
+- HTTP-Request/Response-Handling
+- Input-Validierung (Pydantic)
+- Authentication/Authorization
+- Error-Response-Formatting
+
+### Layer 2: **Core Business Logic** (`core/`)
+```python
+# core/workflow_orchestrator.py
+class WorkflowOrchestrator:
+    def __init__(self, user_service, email_service, pdf_service):
+        self.user_service = user_service
+        self.email_service = email_service  
+        self.pdf_service = pdf_service
+        
+    async def process(self, payload: WebhookPayload):
+        # Orchestriert Business Logic
+        user = await self.user_service.find_user(payload.email)
+        pdf = await self.pdf_service.generate(payload.data)
+        await self.email_service.send(user.email, pdf)
+```
+
+**Verantwortlichkeiten:**
+- Business-Workflow-Orchestrierung
+- Domain-Logic-Koordination
+- State-Management
+- Business-Rules-Validation
+
+### Layer 3: **Service Layer** (`services/`)
+```python
+# services/user_service.py
+class UserService:
+    def __init__(self, database_service):
+        self.db = database_service
+        
+    async def find_user(self, email: str) -> User:
+        # Abstraktion für User-Operations
+        return await self.db.get_user_by_email(email)
+```
+
+**Verantwortlichkeiten:**
+- Abstraktion externer APIs/Datenbanken
+- Datentransformation
+- Error-Handling für externe Calls
+- Retry-Logic
+
+### Layer 4: **Data/Infrastructure Layer** (`models/`, `utils/`)
+```python
+# models/user_models.py
+class User(BaseModel):
+    id: str
+    email: EmailStr
+    created_at: datetime
+
+# utils/database.py
+class DatabaseConnection:
+    async def get_user_by_email(self, email: str):
+        # Low-level Datenbankzugriff
+```
+
+**Verantwortlichkeiten:**
+- Datenmodell-Definitionen
+- Datenbankzugriff
+- Externe API-Clients
+- Utility-Funktionen
+
+## 🔄 Layer-Kommunikation
+
+### **Erlaubte Abhängigkeiten:**
+```
+API Layer → Core Layer → Service Layer → Data Layer
+     ↓           ↓            ↓             ↓
+   utils/     utils/      utils/        utils/
+```
+
+### **Verbotene Abhängigkeiten:**
+```
+❌ Service Layer → Core Layer
+❌ Data Layer → Service Layer  
+❌ Circular Dependencies zwischen Services
+```
+
+## 📋 Checkliste für neue Projekte
+
+### **Projekt-Setup:**
+- [ ] Ordnerstruktur nach Vorlage erstellt
+- [ ] `requirements.txt` mit Base-Dependencies
+- [ ] `.env.example` mit allen benötigten Variablen
+- [ ] `config.py` mit Environment-Handling
+- [ ] Docker-Setup (Dockerfile + docker-compose.yml)
+- [ ] `.gitignore` für Python-Projekte
+
+### **Code-Qualität:**
+- [ ] `pytest.ini` konfiguriert
+- [ ] Logger in `utils/logger.py` eingerichtet
+- [ ] Base-Models in `models/` definiert
+- [ ] Retry-Mechanismus in `utils/retry.py`
+- [ ] Error-Handling-Standards definiert
+
+### **Security (falls benötigt):**
+- [ ] Encryption-Utils in `utils/encryption.py`
+- [ ] Environment-Variable-Validation
+- [ ] API-Key-Rotation-Mechanismus
+- [ ] GDPR-Compliance-Prüfung
+
+### **Documentation:**
+- [ ] README.md mit Projekt-Übersicht
+- [ ] API-Dokumentation in `docs/API.md`
+- [ ] Deployment-Anleitung in `docs/DEPLOYMENT.md`
+- [ ] CHANGELOG.md für Versionierung
+
+## 🎯 Beispiel-Implementation
+
+### Minimales FastAPI-Projekt:
+```python
+# main.py
+import os
+from fastapi import FastAPI
+from core.orchestrator import BusinessOrchestrator
+from services.database_service import DatabaseService
+from utils.logger import get_logger
+
+app = FastAPI()
+logger = get_logger(__name__)
+
+@app.post("/api/process")
+async def process_data(payload: dict):
+    orchestrator = BusinessOrchestrator(DatabaseService())
+    result = await orchestrator.process(payload)
+    return {"success": True, "data": result}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    uvicorn.run(app, host=host, port=port)
+```
+
+### Standard docker-compose.yml:
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"  # Nur über localhost erreichbar
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - LOG_LEVEL=DEBUG
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    working_dir: /app
+```
+
+## 📦 Dependency Management
+
+### Requirements.txt Standards
+```txt
+# requirements.txt - Pinned Versions für Production
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+requests==2.31.0
+
+# Development Dependencies in separate file
+# requirements-dev.txt
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+```
+
+### Versionierung-Strategie
+- **Production**: Exakte Versionen (`==0.104.1`)
+- **Development**: Compatible Versionen (`>=0.104.0,<0.105.0`)
+- **Security Updates**: Regelmäßige Updates alle 4 Wochen
+
+## 🧪 Testing Standards
+
+### Test-Struktur & Patterns
+```python
+# tests/test_services/test_user_service.py
+import pytest
+from unittest.mock import Mock, patch
+from services.user_service import UserService
+
+class TestUserService:
+    @pytest.fixture
+    def user_service(self):
+        mock_db = Mock()
+        return UserService(mock_db)
+    
+    @pytest.mark.asyncio
+    async def test_find_user_success(self, user_service):
+        # Arrange
+        expected_user = {"id": "123", "email": "test@example.com"}
+        user_service.db.get_user_by_email.return_value = expected_user
+        
+        # Act
+        result = await user_service.find_user("test@example.com")
+        
+        # Assert
+        assert result == expected_user
+        user_service.db.get_user_by_email.assert_called_once_with("test@example.com")
+```
+
+### pytest.ini Konfiguration
+```ini
+[tool:pytest]
+testpaths = tests/
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = 
+    --verbose
+    --tb=short
+    --cov=.
+    --cov-report=html
+    --cov-report=term-missing
+    --cov-fail-under=80
+```
+
+### Test-Kategorien
+- **Unit Tests**: Einzelne Funktionen/Klassen (`tests/test_services/`)
+- **Integration Tests**: Service-Kombinationen (`tests/test_integration/`)
+- **End-to-End Tests**: Komplette Workflows (`tests/test_e2e/`)
+
+
+## 🛡️ Error Handling Patterns
+
+### Layer-spezifische Error-Behandlung
+
+#### **Layer 1: API Layer (`main.py`, `api/`)**
+**Verantwortlichkeiten:**
+- **Input-Validierung**: Pydantic macht das automatisch
+- **HTTP-Response-Formatierung**: FastAPI macht das automatisch  
+- **Error-Logging**: Bei unerwarteten Fehlern loggen
+- **Security**: Keine internen Details preisgeben
+
+```python
+# main.py - API Layer Error Handling (Einfach)
+@app.post("/api/process")
+async def process_data(payload: ProcessRequest):
+    try:
+        # Pydantic validiert automatisch das Request-Model
+        result = await workflow_orchestrator.process(payload)
+        return {"success": True, "data": result}
+    except ValidationError as e:
+        # Business validation errors
+        logger.warning(f"Validation failed: {e.error_code}")
+        raise HTTPException(status_code=422, detail=e.message)
+    except ExternalAPIError as e:
+        # External service errors  
+        logger.error(f"External service failed: {e.error_code}")
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable")
+    except Exception as e:
+        # Unexpected errors
+        logger.exception("Unexpected error occurred")
+        raise HTTPException(status_code=500, detail="Internal server error")
+```
+
+#### **Layer 2: Core Business Logic (`core/`)**
+**Verantwortlichkeiten:**
+- **Business Rule Violations**: Domain-spezifische Errors
+- **Workflow-Koordination**: Service-Errors weiterleiten oder transformieren
+- **State-Validation**: Workflow-Zustand validieren
+- **Compensation**: Rollback-Logik bei Fehlern
+
+```python
+# core/workflow_orchestrator.py - Core Layer Error Handling
+class WorkflowOrchestrator:
+    async def process(self, payload):
+        try:
+            user = await self.user_service.find_user(payload.email)
+            result = await self.process_business_logic(user, payload)
+            return result
+        except ExternalAPIError as e:
+            logger.error(f"External service failed: {e.error_code}", extra={"user_id": user.id if user else None})
+            # Compensation logic
+            await self.cleanup_partial_state()
+            raise BusinessLogicError("Workflow processing failed", error_code="WORKFLOW_001")
+        except ValidationError:
+            # Re-raise validation errors to API layer
+            raise
+```
+
+#### **Layer 3: Service Layer (`services/`)**
+**Verantwortlichkeiten:**
+- **External API Errors**: HTTP-Codes zu App-Exceptions konvertieren
+- **Retry-Logic**: Transiente Fehler automatisch wiederholen
+- **Circuit Breaker**: Überlastete Services abschalten
+- **Data Transformation**: Format-Fehler behandeln
+
+```python
+# services/external_service.py - Service Layer Error Handling
+class ExternalAPIService:
+    async def call_api(self, endpoint: str, data: dict):
+        try:
+            response = await self.http_client.post(endpoint, json=data)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code >= 500:
+                logger.error(f"External API server error: {e.response.status_code}")
+                raise ExternalAPIError("External service unavailable", error_code="EXT_API_001")
+            elif e.response.status_code == 404:
+                logger.warning(f"Resource not found: {endpoint}")
+                raise ValidationError("Resource not found", error_code="NOT_FOUND_001")
+            else:
+                logger.error(f"External API client error: {e.response.status_code}")
+                raise ExternalAPIError("External API error", error_code="EXT_API_002")
+        except httpx.RequestError as e:
+            logger.error(f"Network error calling external API: {str(e)}")
+            raise ExternalAPIError("Network connection failed", error_code="NETWORK_001")
+```
+
+#### **Layer 4: Data/Infrastructure Layer (`models/`, `utils/`)**
+**Verantwortlichkeiten:**
+- **Database Errors**: Connection, Query, Constraint Violations
+- **File System Errors**: Disk Full, Permissions
+- **Network Errors**: Timeouts, DNS Resolution
+- **Resource Cleanup**: Connections, Files, Locks freigeben
+
+```python
+# utils/database.py - Data Layer Error Handling
+class DatabaseService:
+    async def get_user_by_email(self, email: str):
+        try:
+            result = await self.connection.fetchrow("SELECT * FROM users WHERE email = $1", email)
+            if not result:
+                raise ValidationError(f"User not found", error_code="USER_NOT_FOUND")
+            return result
+        except asyncpg.PostgresError as e:
+            logger.error(f"Database query failed: {e.sqlstate}")
+            raise DatabaseError("Database operation failed", error_code="DB_QUERY_001")
+        except asyncpg.ConnectionError as e:
+            logger.critical(f"Database connection lost: {str(e)}")
+            raise DatabaseError("Database connection failed", error_code="DB_CONN_001")
+```
+
+### Standard Exception-Hierarchie
+```python
+# utils/exceptions.py
+class BaseAppException(Exception):
+    """Basis-Exception für alle App-spezifischen Errors"""
+    def __init__(self, message: str, error_code: str = None):
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+
+class ValidationError(BaseAppException):
+    """Datenvalidierung fehlgeschlagen - 4xx Client Error"""
+    pass
+
+class BusinessLogicError(BaseAppException):
+    """Business Rules verletzt - 4xx Client Error"""
+    pass
+
+class ExternalAPIError(BaseAppException):
+    """Externe API-Aufrufe fehlgeschlagen - 5xx Server Error"""
+    pass
+
+class DatabaseError(BaseAppException):
+    """Datenbankoperationen fehlgeschlagen - 5xx Server Error"""
+    pass
+
+class SystemError(BaseAppException):
+    """System-Level Fehler - 5xx Server Error"""
+    pass
+```
+
+### Error-Handling-Regeln
+
+#### **Do's:**
+- **Fail Fast**: Fehler so früh wie möglich erkennen und behandeln
+- **Error Codes**: Eindeutige Error-Codes für alle Exception-Types
+- **Layer-Appropriate**: Jeder Layer behandelt nur seine spezifischen Errors
+- **Logging**: Alle Errors mit Context-Informationen loggen
+- **User-Friendly**: API-Responses ohne interne Details
+- **Compensation**: Bei Partial-Failures State aufräumen
+
+#### **Don'ts:**
+- **Silent Failures**: Niemals Exceptions ignorieren oder verschlucken
+- **Generic Exceptions**: Keine generischen `Exception` oder `RuntimeError`
+- **Information Leakage**: Keine Stack Traces oder DB-Details in API-Responses
+- **Cross-Layer**: Service Layer soll nicht Core Layer Exceptions werfen
+- **PII in Logs**: Keine personenbezogenen Daten in Error-Messages
+
+
+## 🔍 Health & Monitoring
+
+### Health Check Endpoints
+```python
+# api/health_endpoints.py
+from fastapi import APIRouter
+from datetime import datetime
+import psutil
+
+router = APIRouter(prefix="/health")
+
+@router.get("/")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0"
+    }
+
+@router.get("/detailed")
+async def detailed_health():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage('/').percent
+        }
+    }
+```
+
+### Logging Standards
+
+#### **Was wird geloggt?**
+
+**✅ Erlaubte Log-Inhalte:**
+- **System-IDs**: User-IDs, Request-IDs, Session-IDs, Transaction-IDs
+- **Performance-Metriken**: Response-Times, DB-Query-Times, API-Call-Duration
+- **Technical Details**: HTTP-Status-Codes, Error-Codes, Service-Names
+- **Business-Events**: "User login successful", "Payment processed", "Email sent"
+- **System-Status**: "Database connection established", "Cache cleared"
+
+**❌ Verbotene Log-Inhalte (GDPR/Privacy):**
+- **Personenbezogene Daten**: Namen, E-Mail-Adressen, Telefonnummern
+- **Sensitive Data**: Passwörter, API-Keys, Kreditkartennummern
+- **User Content**: Chat-Messages, Documents, Personal Files
+- **Location Data**: IP-Adressen, GPS-Koordinaten
+- **Financial Data**: Account-Numbers, Transaction-Details
+
+#### **Wann wird geloggt?**
+
+**Layer-spezifische Logging-Regeln:**
+
+**API Layer:**
+- **INFO**: Successful requests `"API request completed: POST /api/users"`
+- **WARNING**: Client errors (4xx) `"Validation failed for user creation"`
+- **ERROR**: Server errors (5xx) `"Internal server error occurred"`
+
+**Core Layer:**
+- **INFO**: Business workflows `"User registration workflow started"`
+- **WARNING**: Business rule violations `"Insufficient permissions for action"`
+- **ERROR**: Workflow failures `"Payment processing failed"`
+
+**Service Layer:**
+- **DEBUG**: External API calls `"Calling external service: user-service"`
+- **INFO**: Successful operations `"User data retrieved from external API"`
+- **WARNING**: Retry attempts `"External API call failed, retrying (attempt 2/3)"`
+- **ERROR**: Service failures `"External API unavailable after 3 retries"`
+
+**Data Layer:**
+- **DEBUG**: Database queries `"Executing query: SELECT user_id FROM users"`
+- **INFO**: Data operations `"User record created successfully"`
+- **WARNING**: Performance issues `"Database query took 2.5s (threshold: 1s)"`
+- **CRITICAL**: System failures `"Database connection pool exhausted"`
+
+
+#### **Log-Level-Guidelines:**
+- **DEBUG**: Development-Details, nur in Development-Environment
+- **INFO**: Normal Operations, Business-Events
+- **WARNING**: Potential Issues, Retries, Degraded Performance
+- **ERROR**: Failed Operations, Recoverable Errors
+- **CRITICAL**: System Failures, Security Issues, Data Loss
+
+## 📋 Git Workflow Standards
+
+### Branch-Strategie (Simplified)
+```
+main            # Production-ready Code (deployed to production)
+testing         # Development Branch (all development happens here)
+```
+
+### Branch-Management-Regeln
+
+#### **Main Branch:**
+- **Zweck**: Production-ready Code, always deployable
+- **Protection**: Direct pushes blocked, nur via Pull Request von `testing`
+- **Deployment**: Automatisch zu Production-Environment
+- **Testing**: Vollständige Test-Suite muss passieren
+- **Code Review**: Mindestens 1 Reviewer erforderlich
+
+#### **Testing Branch:**
+- **Zweck**: Alle Development-Arbeit (Features, Bugfixes, Experimente)
+- **Development**: Direktes Arbeiten auf diesem Branch
+- **Deployment**: Automatisch zu Staging/Testing-Environment
+- **Testing**: Kontinuierliche Tests während Development
+- **Merge zu Main**: Nur nach erfolgreicher Validation und Testing
+
+### Workflow-Prozess
+1. **Development**: Alle Änderungen auf `testing` Branch
+2. **Testing**: Validierung im Staging-Environment
+3. **Pull Request**: Von `testing` zu `main` nach erfolgreichen Tests
+4. **Production**: Deployment nach Merge zu `main`
+
+### Commit Message Konventionen
+```
+# Format: <type>(<scope>): <description>
+
+feat(auth): add JWT token authentication
+fix(api): resolve user validation error
+docs(readme): update installation instructions
+test(user): add unit tests for user service
+refactor(db): optimize database connection handling
+```
+
+## 📚 Documentation Standards
+
+### Docstring Konventionen
+```python
+def process_user_data(user_id: str, data: dict) -> dict:
+    """
+    Verarbeitet Benutzerdaten und führt Validierung durch.
+    
+    Args:
+        user_id (str): Eindeutige Benutzer-ID
+        data (dict): Zu verarbeitende Benutzerdaten
+        
+    Returns:
+        dict: Verarbeitete und validierte Daten
+        
+    Raises:
+        ValidationError: Wenn Datenvalidierung fehlschlägt
+        DatabaseError: Wenn Datenbankzugriff fehlschlägt
+        
+    Example:
+        >>> result = process_user_data("123", {"name": "John"})
+        >>> print(result["validated"])
+        True
+    """
+```
+
+### README.md Template
+```markdown
+# Projekt-Name
+
+Kurze Beschreibung des Projekts.
+
+## 🚀 Quick Start
+
+\`\`\`bash
+# Installation
+pip install -r requirements.txt
+
+# Konfiguration
+cp .env.example .env
+
+# Start
+python main.py
+\`\`\`
+
+## 📋 API Dokumentation
+
+- Health Check: `GET /health`
+- API Docs: `GET /docs` (Swagger UI)
+
+## 🧪 Testing
+
+\`\`\`bash
+pytest tests/ --cov=.
+\`\`\`
+
+## 🚢 Deployment
+
+\`\`\`bash
+docker-compose up -d
+\`\`\`
+```
+
+## 🔒 Security Guidelines
+
+### Environment Security
+```python
+# config.py - Sichere Konfiguration
+import os
+from typing import Optional
+
+def get_required_env(key: str) -> str:
+    """Sichere Umgebungsvariable mit Fehlermeldung"""
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"Required environment variable {key} not set")
+    return value
+
+def get_optional_env(key: str, default: str = "") -> str:
+    """Optionale Umgebungsvariable mit Fallback"""
+    return os.getenv(key, default)
+
+# Verwendung
+DATABASE_URL = get_required_env("DATABASE_URL")
+DEBUG_MODE = get_optional_env("DEBUG", "false").lower() == "true"
+```
+
+## 📊 Pydantic Datamodels
+
+### Warum Pydantic?
+
+**Pydantic** ist die Standard-Bibliothek für Datenvalidierung und -serialisierung in modernen Python-Anwendungen. Sie gewährleistet Typsicherheit, automatische Validierung und klare API-Contracts.
+
+### Wann Pydantic verwenden?
+
+#### **✅ Immer verwenden für:**
+
+**1. API Request/Response Models**
+```python
+# API Input Validation
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    name: str = Field(..., min_length=2, max_length=100)
+    age: int = Field(..., ge=0, le=150)
+    
+# API Response Models  
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+    name: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True  # Für SQLAlchemy ORM-Kompatibilität
+```
+
+**2. Service Layer Contracts**
+```python
+# Input für Business Logic
+class ProcessPaymentInput(BaseModel):
+    user_id: str
+    amount: Decimal = Field(..., gt=0)
+    currency: str = Field(..., regex="^[A-Z]{3}$")
+    payment_method: PaymentMethod
+    
+# Output für Service Responses
+class PaymentResult(BaseModel):
+    transaction_id: str
+    status: PaymentStatus
+    processed_at: datetime
+    fees: Optional[Decimal] = None
+```
+
+**3. Configuration Models**
+```python
+# Typsichere Konfiguration
+class DatabaseConfig(BaseModel):
+    host: str
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str
+    username: str
+    password: SecretStr
+    ssl_mode: str = "require"
+    
+    @validator('host')
+    def validate_host(cls, v):
+        if not v or v.isspace():
+            raise ValueError('Host cannot be empty')
+        return v
+```
+
+**4. External API Models**
+```python
+# Zoom API Response Model
+class ZoomMeetingResponse(BaseModel):
+    id: str
+    topic: str
+    start_time: datetime
+    duration: int
+    participants: List[ZoomParticipant]
+    
+    class Config:
+        # Flexible für externe APIs
+        extra = "ignore"  # Unbekannte Felder ignorieren
+```
+
+#### **❌ Nicht verwenden für:**
+
+**1. Interne Data Classes (verwende dataclasses)**
+```python
+# Einfache interne Datenstrukturen
+from dataclasses import dataclass
+
+@dataclass
+class CacheEntry:
+    key: str
+    value: Any
+    expires_at: datetime
+```
+
+**2. ORM Models (verwende SQLAlchemy direkt)**
+```python
+# Database Models bleiben als SQLAlchemy
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+```
+
+**3. Utility Functions (verwende normale Type Hints)**
+```python
+# Normale Funktionen mit Type Hints
+def calculate_total(items: List[float], tax_rate: float = 0.19) -> float:
+    return sum(items) * (1 + tax_rate)
+```
+
+### Layer-spezifische Pydantic-Nutzung
+
+#### **API Layer (`main.py`, `api/`)**
+```python
+# Request/Response Models für FastAPI
+@app.post("/users", response_model=UserResponse)
+async def create_user(user_data: CreateUserRequest):
+    # Automatische Validierung durch Pydantic
+    result = await user_service.create_user(user_data)
+    return UserResponse.from_orm(result)
+```
+
+#### **Core Layer (`core/`)**
+```python
+# Business Logic Input/Output
+class WorkflowInput(BaseModel):
+    user_id: str
+    payload: Dict[str, Any]
+    priority: WorkflowPriority = WorkflowPriority.NORMAL
+    
+class WorkflowResult(BaseModel):
+    workflow_id: str
+    status: WorkflowStatus
+    created_at: datetime
+    estimated_completion: Optional[datetime] = None
+```
+
+#### **Service Layer (`services/`)**
+```python
+# Service Contracts
+class ExternalAPIRequest(BaseModel):
+    endpoint: HttpUrl
+    method: str = "GET"
+    headers: Dict[str, str] = Field(default_factory=dict)
+    data: Optional[Dict[str, Any]] = None
+    timeout: int = Field(default=30, ge=1, le=300)
+```
+
+### Pydantic Best Practices
+
+#### **1. Field Validation**
+```python
+class UserModel(BaseModel):
+    email: EmailStr  # Automatische E-Mail-Validierung
+    age: int = Field(..., ge=0, le=150, description="User age in years")
+    username: str = Field(..., regex="^[a-zA-Z0-9_]+$", min_length=3)
+    
+    @validator('username')
+    def username_alphanumeric(cls, v):
+        if not v.replace('_', '').isalnum():
+            raise ValueError('Username must be alphanumeric')
+        return v
+```
+
+#### **2. Custom Validators**
+```python
+class PaymentModel(BaseModel):
+    amount: Decimal
+    currency: str
+    
+    @validator('amount')
+    def amount_precision(cls, v):
+        if v.as_tuple().exponent < -2:
+            raise ValueError('Amount cannot have more than 2 decimal places')
+        return v
+    
+    @root_validator
+    def validate_currency_amount(cls, values):
+        amount, currency = values.get('amount'), values.get('currency')
+        if currency == 'JPY' and amount % 1 != 0:
+            raise ValueError('JPY amounts must be whole numbers')
+        return values
+```
+
+#### **3. Serialization Aliases**
+```python
+class ExternalAPIModel(BaseModel):
+    user_id: str = Field(alias="userId")
+    created_at: datetime = Field(alias="createdAt")
+    
+    class Config:
+        allow_population_by_field_name = True  # Akzeptiert beide Namen
+```
+
+#### **4. Model Inheritance**
+```python
+class BaseTimestampModel(BaseModel):
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+class UserModel(BaseTimestampModel):
+    id: str
+    email: EmailStr
+    name: str
+    # created_at und updated_at werden automatisch vererbt
+```
+
+### Integration mit FastAPI
+
+```python
+# FastAPI automatische Dokumentation
+@app.post("/process-workflow", response_model=WorkflowResult)
+async def process_workflow(
+    request: WorkflowInput,  # Automatische Request-Validierung
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Prozessiert einen Workflow mit automatischer:
+    - Request-Validierung (Pydantic)
+    - Response-Serialisierung (Pydantic)  
+    - OpenAPI-Dokumentation (FastAPI + Pydantic)
+    - Type Safety (mypy + Pydantic)
+    """
+    result = await workflow_orchestrator.process(request)
+    return WorkflowResult(**result.dict())
+```
+
+**Vorteile dieser Pydantic-Strategie:**
+- **Typsicherheit**: Compile-time und Runtime-Validierung
+- **Automatische Dokumentation**: OpenAPI/Swagger aus Models
+- **Einheitliche Contracts**: Klare API-Contracts zwischen Layern
+- **Fehlerbehandlung**: Automatische Validierungsfehler mit Details
+- **IDE-Support**: Autocomplete und Type-Checking
+
+Diese Vorlage gewährleistet konsistente, skalierbare und wartbare Python-Projekte für Teams jeder Größe.
